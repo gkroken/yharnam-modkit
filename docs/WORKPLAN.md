@@ -157,11 +157,13 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
   - [x] `player_stat_get` and `player_stat_set` (e230c49), and `player_position` and
         `player_block`, shown in the world (a87a447).
   - [ ] `player_warp` and `lamp_warp`.
-  - [ ] `loading_screen()`, `on_world_load`.
+  - [ ] `loading_screen()`.
+  - [x] `on_world_load` (port b148dcb).
 - [x] Characters: `chr_list` (main thread), `sp_effect_apply` (a SpEffectParam row, a character
       that `chr_list` returns), `sp_effect_has`. Port a87a447, ebb8113.
 - [ ] UI and input:
-  - [ ] `show_message`, `show_text` and `replace_text`.
+  - [x] `show_message` and `show_text`, drawn by the overlay (port b148dcb).
+  - [ ] `replace_text`.
   - [ ] `input` and `input_take`.
   - [ ] Plugin options listed in the guide's Mods tab.
 - [x] Each call has a host-side test against fake structures at the real addresses
@@ -169,7 +171,14 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
       `tools/game-world.ps1`, which clicks Continue and restores the save afterwards.
 
 **Done when** an example plugin gives the player a buff each time a chosen event flag is set,
-and a second one changes a weapon param row by field name.
+and a second one changes a weapon param row by field name. **Both exist and ran in the world**
+(tool repo, `plugins/examples/flag_buff` and `weapon_tweak`):
+- `flag_buff`, with `[flag_buff] flag = 2000`: after flag 2000 turned on, it applied SpEffect
+  2200 (`sp_effect_apply` = 0), and the player then had it (`sp_effect_has` = 1).
+- `weapon_tweak`: EquipParamWeapon row 2000000's `attackBasePhysics` went 92 -> 150 at start,
+  and a probe read 150 back in the world.
+- The UI items above (`show_message`/`show_text` are in, port b148dcb) and the warps,
+  `loading_screen` and input are still open.
 
 ## Phase 4: Lua scripting (`bb_lua.dll`)
 

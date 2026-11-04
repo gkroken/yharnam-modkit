@@ -16,17 +16,12 @@ param([string[]]$Plugins = @(), [int]$Seconds = 40, [string]$Log = "$env:TEMP\bb
       [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe")
 $ErrorActionPreference = 'Stop'
 $root = Join-Path (Split-Path -Parent $PSScriptRoot) 'port'
+# powershell -File passes a list as one comma-joined string: split it.
+$Plugins = @($Plugins | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+foreach ($p in $Plugins) { if (-not (Test-Path $p)) { throw "no plugin at $p" } }  # before touching anything
 $backup = Join-Path $env:TEMP "bb-game-world-save-$PID"
-Copy-Item -Recurse "$root\user\savedata" $backup
-"save backed up to $backup (it is put back at the end; if this run is cut short, copy it back)"
-New-Item -ItemType Directory -Force "$root\plugins" | Out-Null
-# A plugin of the same name already in port\plugins (the developer's own) is kept aside and put back.
+$copied = @()
 $kept = @()
-foreach ($p in $Plugins) {
-    $target = Join-Path "$root\plugins" (Split-Path $p -Leaf)
-    if (Test-Path $target) { Move-Item $target "$target.game-world-kept"; $kept += $target }
-    Copy-Item $p "$root\plugins\"
-}
 Add-Type @'
 using System; using System.Runtime.InteropServices;
 public static class GW { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
@@ -51,6 +46,16 @@ function Click($handle, $x, $y) {
 }
 $cursor = New-Object GW+POINT; [void][GW]::GetCursorPos([ref]$cursor)
 try {
+    Copy-Item -Recurse "$root\user\savedata" $backup
+    "save backed up to $backup (it is put back at the end; if this run is cut short, copy it back)"
+    New-Item -ItemType Directory -Force "$root\plugins" | Out-Null
+    # A plugin of the same name already in port\plugins (the developer's own) is kept aside and put back.
+    foreach ($p in $Plugins) {
+        $target = Join-Path "$root\plugins" (Split-Path $p -Leaf)
+        if (Test-Path $target) { Move-Item $target "$target.game-world-kept"; $kept += $target }
+        Copy-Item $p "$root\plugins\"
+        $copied += $target
+    }
     if (-not $env:BB_GAME_DIR) { $env:BB_GAME_DIR = 'C:/games/Bloodborne/game' }
     Start-Process -FilePath $Python -ArgumentList "$root\run.py" -WorkingDirectory $root -RedirectStandardOutput $Log `
         -RedirectStandardError "$Log.err" -WindowStyle Hidden | Out-Null
@@ -80,10 +85,12 @@ try {
     [void][GW]::SetCursorPos($cursor.X, $cursor.Y)
     Get-Process bb-probe -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$root*" } | Stop-Process -Force
     Start-Sleep 2
-    Remove-Item -Recurse -Force "$root\user\savedata"
-    Copy-Item -Recurse $backup "$root\user\savedata"
-    Remove-Item -Recurse -Force $backup
-    foreach ($p in $Plugins) { Remove-Item -Force (Join-Path "$root\plugins" (Split-Path $p -Leaf)) -ErrorAction SilentlyContinue }
+    if (Test-Path $backup) {  # only what this run took is put back
+        Remove-Item -Recurse -Force "$root\user\savedata" -ErrorAction SilentlyContinue
+        Copy-Item -Recurse $backup "$root\user\savedata"
+        Remove-Item -Recurse -Force $backup
+    }
+    foreach ($t in $copied) { Remove-Item -Force $t -ErrorAction SilentlyContinue }
     foreach ($t in $kept) { Move-Item "$t.game-world-kept" $t }
     if (-not (Get-ChildItem "$root\plugins" -ErrorAction SilentlyContinue)) { Remove-Item "$root\plugins" -ErrorAction SilentlyContinue }
 }
