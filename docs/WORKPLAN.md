@@ -31,22 +31,22 @@ plugin can target both runtimes. Background and sources: [RESEARCH.md](RESEARCH.
 - [x] Note the startup order in `src/probe.c`: segments mapped, patches applied,
       `bb_hooks_init`, `bb_engine_install`, `bb_hooks_seal`, game start.
 
-**Test baseline (upstream 2.3.2, Windows, 2026-11-04)**: `bash tools/test-port.sh`. It builds and
-runs every CMake `*-test` target, then the Python suite, with `BB_TEST_GAME_DIR` set to the dump.
-Results:
+**Test baseline (port b4ae1ae, Windows, 2026-11-04)**: `bash tools/test-port.sh`. It builds and runs
+every CMake `*-test` target, then the Python suite, and compares both with
+`tools/test-baseline.txt`. That file lists the floors, the reason for each skip, and every known
+failure by full test id. The run fails on a new failure, and also when fewer tests run or pass, or
+more are skipped. A broken build or a missing Python therefore can't look like a clean run.
 - **C/C++:** 26 of 33 targets pass.
-  - 4 don't build on Windows: `camera-motion`, `scene-resolution` and `taa-shader` have an
-    undefined `runtime_memory_is_mapped`; `upscaler-support` uses `setenv`.
-  - 3 need trophy-data arguments the runner doesn't give: `trophy-data`, `trophy-history`,
-    `trophy-toast`.
-- **Python:** 394 run, 331 pass, 53 skipped, 3 failures and 7 errors.
-  - Linux packaging and `sed`/`grep`-based tests.
-  - Launcher modules that need Qt (`test_launcher_ingame_sync`, `test_settings_navigation`,
-    `test_setup_wizard`).
-  - `test_mod_symlinks_rejected`: Windows symlink rights.
-  - `test_https_trusts_the_shipped_roots...`.
-
-The runner lists these as `known` and exits non-zero only on a failure outside this list.
+  - 4 don't link on Windows (undefined runtime symbols, `setenv`).
+  - 3 need a trophy data file as their argument.
+- **Python:** 394 run, 367 pass, 16 skipped, 11 known failures.
+  - The Qt-only launcher modules, Linux packaging, Windows symlinks and certificates.
+  - `test_probe`'s POSIX signal test.
+- **The 16 skips:**
+  - 14 tests need `build.sh --test` executables, which have no Windows build.
+  - 1 is CPU-dependent (`test_redzone`).
+  - 1 needs Developer Mode for symlinks.
+- **Requirement:** python.org Python with `capstone`, `keystone-engine` and `numpy`.
 
 **Done (2026-11-04):** our own build reaches the title screen and plays well (RTX 4090, 91 engine hooks installed).
 

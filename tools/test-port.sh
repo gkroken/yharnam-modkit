@@ -2,64 +2,100 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Builds and runs the port's tests on Windows: every CMake "*-test" target (C/C++), then the
 # Python suite. The port's build.sh stops after bb-probe.exe on Windows (no --test there), so
-# this is the one command for both the coder and the reviewer. Results are compared against
-# the baseline in docs/WORKPLAN.md (Phase 0): exit 0 only when nothing outside that baseline
-# fails.
+# this is the one command for both the coder and the reviewer.
+#
+# It compares against tools/test-baseline.txt and exits 0 only when:
+# - nothing fails that the baseline doesn't list, matched by full test id;
+# - at least as many tests ran and passed as the baseline's floors, and no more were skipped
+#   (a broken build or a missing Python must not look like a clean run).
+# A known failure that now passes is printed, so the list can shrink.
 #
 # Run from any shell:  bash tools/test-port.sh            (C and Python)
 #                      bash tools/test-port.sh --c-only   (or --py-only)
 # Needs: a configured port build (bash build.sh in MSYS2 CLANG64, once), python.org Python
-# (BB_PYTHON, default the per-user 3.13), and the game dump (BB_TEST_GAME_DIR) for the tests
-# that read the player's own files.
+# (BB_PYTHON, default the per-user 3.13) with capstone, keystone-engine and numpy
+# (pip install --user capstone keystone-engine numpy), and the game dump
+# (BB_TEST_GAME_DIR) for the tests that read the player's own files.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 port="$root/port"
+baseline="$root/tools/test-baseline.txt"
 python=${BB_PYTHON:-/c/Users/gard1/AppData/Local/Programs/Python/Python313/python.exe}
 export BB_TEST_GAME_DIR=${BB_TEST_GAME_DIR:-C:/games/Bloodborne/game}
+# test_cpu_compat's allocator tests read the same dump under their own name.
+export BB_CPU_GAME_DIR=${BB_CPU_GAME_DIR:-$BB_TEST_GAME_DIR}
 logs=${BB_TEST_LOGS:-$root/out/test-logs}
 mkdir -p "$logs"
 mode=${1:-all}
 
-# Known failures on Windows at the baseline (upstream 2.3.2, recorded 2026-11-04). Anything
-# else failing is new.
-known_c='camera-motion-test scene-resolution-test taa-shader-test upscaler-support-test trophy-data-test trophy-history-test trophy-toast-test'
-known_py='test_https_trusts_the_shipped_roots_and_explains_certificate_errors test_launcher_ingame_sync test_mod_symlinks_rejected test_host_nvidia_and_compiler_are_exposed_without_host_libc test_live_resolution_without_sed_or_grep test_settings_navigation test_setup_wizard test_host_driver_can_be_supplied_outside_hidden_nix_store test_live_resolution_setting_and_gpu_check test_outputs_other_than_1080p_patch_the_render_size_and_restarts_recompute_it'
+problems=0
+problem() { echo "  PROBLEM $*"; problems=$((problems + 1)); }
+floor() { awk -v k="$1" '$1 == k { print $2 }' "$baseline"; }
+known() { awk -v k="$1" '$1 == k { print $2 }' "$baseline"; }
 
-new_failures=0
-is_known() { [[ " $2 " == *" $1 "* ]]; }
+[[ -f $baseline ]] || { echo "No $baseline"; exit 2; }
+
+# Compares what failed with what the baseline lists: new failures are problems, known ones that
+# passed are reported.
+compare() {  # compare <kind: c-known|py-known> <file of failed ids>
+    local id
+    while read -r id; do
+        [[ -z $id ]] && continue
+        if known "$1" | grep -qxF -- "$id"; then echo "  known   $id"; else problem "new failure: $id"; fi
+    done < "$2"
+    while read -r id; do
+        grep -qxF -- "$id" "$2" || echo "  NOTE    known failure passed now (remove it from the baseline): $id"
+    done < <(known "$1")
+}
 
 run_c() {
     # In the CLANG64 environment, so the test executables find their DLLs.
-    local script="$logs/c-tests.sh"
+    local script="$logs/c-tests.sh" results="$logs/c-results.txt"
     cat > "$script" <<EOF
 cd '$port' && source ./msys2-env.sh
-for t in \$(ninja -C out/gpu -t targets all 2>/dev/null | grep -o -E '^[a-z0-9-]+-test(\.exe)?:' | sed -E 's/(\.exe)?://' | sort -u); do
+if ! targets=\$(ninja -C out/gpu -t targets all 2>&1); then echo "NOTARGETS \$targets"; exit 0; fi
+for t in \$(printf '%s\n' "\$targets" | grep -o -E '^[a-z0-9-]+-test(\.exe)?:' | sed -E 's/(\.exe)?://' | sort -u); do
     if ! ninja -C out/gpu "\$t" > '$logs'/build-\$t.log 2>&1; then echo "BUILDFAIL \$t"; continue; fi
     if timeout 300 out/gpu/\$t.exe > '$logs'/run-\$t.log 2>&1; then echo "PASS \$t"; else echo "FAIL \$t"; fi
 done
 EOF
-    local pass=0
-    while read -r status name; do
-        case $status in
-        PASS) pass=$((pass + 1)) ;;
-        *) if is_known "$name" "$known_c"; then echo "  known  $status $name"
-           else echo "  NEW    $status $name (log: $logs/*-$name.log)"; new_failures=$((new_failures + 1)); fi ;;
-        esac
-    done < <(MSYSTEM=CLANG64 CHERE_INVOKING=1 /c/msys64/usr/bin/bash.exe -l "$script" 2>&1)
-    echo "C/C++: $pass passed"
+    MSYSTEM=CLANG64 CHERE_INVOKING=1 /c/msys64/usr/bin/bash.exe -l "$script" > "$results" 2>&1
+    if grep -q '^NOTARGETS' "$results"; then
+        problem "no C/C++ test targets: is the port configured (bash build.sh)? $(head -c 300 "$results")"
+        return
+    fi
+    local targets pass
+    targets=$(grep -c -E '^(PASS|FAIL|BUILDFAIL) ' "$results")
+    pass=$(grep -c '^PASS ' "$results")
+    grep -E '^(FAIL|BUILDFAIL) ' "$results" | awk '{print $2}' > "$logs/c-failed.txt"
+    echo "C/C++: $targets targets, $pass passed (logs: $logs/build-*.log, run-*.log)"
+    compare c-known "$logs/c-failed.txt"
+    (( targets >= $(floor c-min-targets) )) || problem "only $targets C/C++ targets; the baseline has $(floor c-min-targets)"
+    (( pass >= $(floor c-min-pass) )) || problem "only $pass C/C++ targets passed; the baseline has $(floor c-min-pass)"
 }
 
 run_py() {
     local log="$logs/python.log"
-    (cd "$port" && "$python" -m unittest discover -s tests -p 'test_*.py' > "$log" 2>&1)
+    if ! "$python" -c 'import capstone, keystone, numpy' > "$logs/python-check.log" 2>&1; then
+        problem "$python cannot run the suite with capstone, keystone and numpy (pip install --user capstone keystone-engine numpy): $(tail -1 "$logs/python-check.log")"
+        return
+    fi
+    # The probe's DLLs (test_probe runs bb-probe.exe).
+    (cd "$port" && PATH="/c/msys64/clang64/bin:$PATH" "$python" -m unittest discover -s tests -p 'test_*.py' > "$log" 2>&1)
+    local ran skipped
+    ran=$(grep -a -o -E '^Ran [0-9]+ tests?' "$log" | grep -o -E '[0-9]+')
+    if [[ -z $ran ]]; then problem "the Python suite did not report a run: $(tail -3 "$log")"; return; fi
+    skipped=$(grep -a -o -E 'skipped=[0-9]+' "$log" | grep -o -E '[0-9]+' || true)
+    skipped=${skipped:-0}
     grep -a -E '^Ran |^(OK|FAILED)' "$log" | sed 's/^/Python: /'
-    while read -r name; do
-        if is_known "$name" "$known_py"; then echo "  known  $name"
-        else echo "  NEW    $name (log: $log)"; new_failures=$((new_failures + 1)); fi
-    done < <(grep -a -E '^(ERROR|FAIL): ' "$log" | awk '{print $2}')
+    # The full id is in the parentheses: module.Class.method, or unittest.loader._FailedTest.<module>.
+    grep -a -E '^(ERROR|FAIL): ' "$log" | sed -E 's/^[A-Z]+: [^ ]+ \((.*)\)$/\1/' > "$logs/py-failed.txt"
+    compare py-known "$logs/py-failed.txt"
+    (( ran >= $(floor py-min-ran) )) || problem "only $ran Python tests ran; the baseline has $(floor py-min-ran)"
+    (( skipped <= $(floor py-max-skipped) )) || problem "$skipped Python tests skipped; the baseline allows $(floor py-max-skipped)"
 }
 
 [[ $mode != --py-only ]] && run_c
 [[ $mode != --c-only ]] && run_py
-if (( new_failures )); then echo "$new_failures failure(s) outside the baseline"; exit 1; fi
-echo 'No failures outside the baseline'
+if (( problems )); then echo "$problems problem(s) against the baseline"; exit 1; fi
+echo 'Matches the baseline: no new failures, nothing fewer run'
