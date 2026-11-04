@@ -87,8 +87,9 @@ hooking. The guide is `port/docs/PLUGINS.md`.
       first said "every 300 frames"; time is the better example, because the frame rate varies.
 
 **Done:**
-- **Unit test:** `plugin-host-test` makes 100 checks with ten test plugins, and the reviewer's
-  mutation probe kills all its mutations.
+- **Unit test:** `plugin-host-test` makes 101 checks with ten test plugins. The reviewer's
+  mutation probe (21 mutations, including the data-into-code write straddle added for
+  port-cd2a2bf-N1) kills all 21: reviewer, port-da5ed9c.
 - **In game (1.09):** hello loads, reads its option and ticks (5 s, 564 frames, and so on);
   `BB_PLUGINS=0` and `plugins.ini` off leave it out (reviewer, port-cd2a2bf); engine hooks
   stay at 91.
