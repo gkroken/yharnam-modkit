@@ -31,6 +31,23 @@ plugin can target both runtimes. Background and sources: [RESEARCH.md](RESEARCH.
 - [x] Note the startup order in `src/probe.c`: segments mapped, patches applied,
       `bb_hooks_init`, `bb_engine_install`, `bb_hooks_seal`, game start.
 
+**Test baseline (upstream 2.3.2, Windows, 2026-11-04)**: `bash tools/test-port.sh`. It builds and
+runs every CMake `*-test` target, then the Python suite, with `BB_TEST_GAME_DIR` set to the dump.
+Results:
+- **C/C++:** 26 of 33 targets pass.
+  - 4 don't build on Windows: `camera-motion`, `scene-resolution` and `taa-shader` have an
+    undefined `runtime_memory_is_mapped`; `upscaler-support` uses `setenv`.
+  - 3 need trophy-data arguments the runner doesn't give: `trophy-data`, `trophy-history`,
+    `trophy-toast`.
+- **Python:** 394 run, 331 pass, 53 skipped, 3 failures and 7 errors.
+  - Linux packaging and `sed`/`grep`-based tests.
+  - Launcher modules that need Qt (`test_launcher_ingame_sync`, `test_settings_navigation`,
+    `test_setup_wizard`).
+  - `test_mod_symlinks_rejected`: Windows symlink rights.
+  - `test_https_trusts_the_shipped_roots...`.
+
+The runner lists these as `known` and exits non-zero only on a failure outside this list.
+
 **Done (2026-11-04):** our own build reaches the title screen and plays well (RTX 4090, 91 engine hooks installed).
 
 ## Phase 1: Plugin loader (in the fork)
