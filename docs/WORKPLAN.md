@@ -17,18 +17,21 @@ plugin can target both runtimes. Background and sources: [RESEARCH.md](RESEARCH.
 
 ## Phase 0: Environment and baseline build
 
-- [ ] Install MSYS2 (`winget install MSYS2.MSYS2`) and the CLANG64 packages listed in
-      `port/packaging/windows/README.md`. MSYS2 is not installed yet.
-- [ ] Fork `Jgamrot/yharnam-pc` on GitHub. Point the `port` submodule at the fork and keep
+- [x] Install MSYS2 (`winget install MSYS2.MSYS2`) and the CLANG64 packages listed in
+      `port/packaging/windows/README.md`. Done: clang 23.1.4, cmake 4.4.5, ninja 1.13.2.
+- [x] Fork `Jgamrot/yharnam-pc` on GitHub. Point the `port` submodule at the fork and keep
       `upstream` as a second remote. All port work goes on a `plugins` branch.
-- [ ] `bash build.sh` in the CLANG64 shell builds `out/bb-probe.exe`.
-- [ ] Run the build against `C:\games\Bloodborne\game` with
+- [x] `bash build.sh` in the CLANG64 shell builds `out/bb-probe.exe`.
+- [x] Run the build against `C:\games\Bloodborne\game` with
       `BB_GAME_DIR=C:/games/Bloodborne/game python run.py`. Use a **separate saves folder**,
       not the installed release's `user\`.
-- [ ] Note the startup order in `src/probe.c`: segments mapped, patches applied,
+- [x] Run `run.py` with **python.org Python**, not MSYS2's. MSYS2's Python uses `/` as its main
+      separator, so `scripts/mods.py`'s `LINKED` lookups miss and report a false "File/directory
+      conflict". Upstream fix to send: normalise the keys with `os.path.normpath`.
+- [x] Note the startup order in `src/probe.c`: segments mapped, patches applied,
       `bb_hooks_init`, `bb_engine_install`, `bb_hooks_seal`, game start.
 
-**Done when** our own build reaches the title screen and plays like the installed 1.9.x release.
+**Done (2026-11-04):** our own build reaches the title screen and plays well (RTX 4090, 91 engine hooks installed).
 
 ## Phase 1: Plugin loader (in the fork)
 
