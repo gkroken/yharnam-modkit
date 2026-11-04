@@ -147,20 +147,26 @@ addresses (base `0x400000`).
 The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FLAG_MAN` and
 `param_row`; `src/pc_menu.c` has messages and menus). Collect them behind the API.
 
-- [ ] Event flags: `event_flag_get`, `event_flag_set` and an `on_event_flag(id, fn)` watcher.
-- [ ] Params by table and field name: `param_row`, `param_get`, `param_set`, `param_ids`. Field
-      names and offsets come from the dump's own `paramdef/` at prepare time, not shipped data.
+- [x] Event flags: `event_flag_get` (direct read of the flag store, any thread), `event_flag_set`
+      (main thread), and an `on_event_flag(fn)` watcher (a hook on the game's setter; one round
+      per frame). Port e230c49, a851c5a.
+- [x] Params by table and field name: `param_row`, `param_get`, `param_set`, `param_ids`. Field
+      names come from the dump's own PARAMDEF files at each start (`scripts/paramdefs.py`), and
+      are used only where the row size matches the live table. Port 2c250a9.
 - [ ] Player:
-  - [ ] `player_stat_get` and `player_stat_set`.
-  - [ ] `player_position`, `player_warp` and `lamp_warp`.
+  - [x] `player_stat_get` and `player_stat_set` (e230c49), and `player_position` and
+        `player_block`, shown in the world (a87a447).
+  - [ ] `player_warp` and `lamp_warp`.
   - [ ] `loading_screen()`, `on_world_load`.
-- [ ] Characters: `chr_list`, `sp_effect_apply`, `sp_effect_has`.
+- [x] Characters: `chr_list` (main thread), `sp_effect_apply` (a SpEffectParam row, a character
+      that `chr_list` returns), `sp_effect_has`. Port a87a447, ebb8113.
 - [ ] UI and input:
   - [ ] `show_message`, `show_text` and `replace_text`.
   - [ ] `input` and `input_take`.
   - [ ] Plugin options listed in the guide's Mods tab.
-- [ ] Each call is a host-side test with recorded memory where possible (`port/tests/` has the
-      harness), plus a manual check in game.
+- [x] Each call has a host-side test against fake structures at the real addresses
+      (game-state-test, flag-delivery-test, params-test). The in-game checks run through
+      `tools/game-world.ps1`, which clicks Continue and restores the save afterwards.
 
 **Done when** an example plugin gives the player a buff each time a chosen event flag is set,
 and a second one changes a weapon param row by field name.
