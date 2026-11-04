@@ -136,6 +136,9 @@ addresses (base `0x400000`).
   - An overlapping hook and an early `call_guest` are refused.
   - A TCB-entry hook's stub load matches the image's (`0x1508`). The reviewer ran 55 such hooks
     (port-de208a0).
+- **Example:** `plugins/examples/frame_hook` hooks SprjFlipper::Update, counts calls, and
+  (`[frame_hook] skip_intro = 1`) `patch()`es the Skip Intro sites with their original bytes
+  checked. It builds in the gate. **Not yet run in game** (tool-c25a97f-F1).
 - **Not shown in game:** a real `call_guest`. No side-effect-free game function is known yet;
   Phase 3's accessors will use it.
 
