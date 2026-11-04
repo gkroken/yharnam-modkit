@@ -18,17 +18,38 @@ $ErrorActionPreference = 'Stop'
 $root = Join-Path (Split-Path -Parent $PSScriptRoot) 'port'
 $backup = Join-Path $env:TEMP "bb-game-world-save-$PID"
 Copy-Item -Recurse "$root\user\savedata" $backup
+"save backed up to $backup (it is put back at the end; if this run is cut short, copy it back)"
 New-Item -ItemType Directory -Force "$root\plugins" | Out-Null
-foreach ($p in $Plugins) { Copy-Item $p "$root\plugins\" }
+# A plugin of the same name already in port\plugins (the developer's own) is kept aside and put back.
+$kept = @()
+foreach ($p in $Plugins) {
+    $target = Join-Path "$root\plugins" (Split-Path $p -Leaf)
+    if (Test-Path $target) { Move-Item $target "$target.game-world-kept"; $kept += $target }
+    Copy-Item $p "$root\plugins\"
+}
 Add-Type @'
 using System; using System.Runtime.InteropServices;
 public static class GW { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
 [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, UIntPtr e);
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
 [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-public struct RECT { public int Left, Top, Right, Bottom; } }
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+[DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
+[DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+public struct RECT { public int Left, Top, Right, Bottom; }
+public struct POINT { public int X, Y; } }
 '@
-function Click { [GW]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [GW]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero) }
+# Clicks only when the game is the foreground window and the point under the cursor is the game's
+# (Windows may refuse to bring a background process's window forward): never anyone else's window.
+function Click($handle, $x, $y) {
+    if ([GW]::GetForegroundWindow() -ne $handle) { return $false }
+    $pt = New-Object GW+POINT; $pt.X = $x; $pt.Y = $y
+    if ([GW]::GetAncestor([GW]::WindowFromPoint($pt), 2) -ne $handle) { return $false }  # GA_ROOT
+    [GW]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [GW]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+    return $true
+}
+$cursor = New-Object GW+POINT; [void][GW]::GetCursorPos([ref]$cursor)
 try {
     if (-not $env:BB_GAME_DIR) { $env:BB_GAME_DIR = 'C:/games/Bloodborne/game' }
     Start-Process -FilePath $Python -ArgumentList "$root\run.py" -WorkingDirectory $root -RedirectStandardOutput $Log `
@@ -48,17 +69,22 @@ try {
         $r = New-Object GW+RECT; [void][GW]::GetWindowRect($game.MainWindowHandle, [ref]$r)
         $x = [int]($r.Left + ($r.Right - $r.Left) * 0.502); $y = [int]($r.Top + ($r.Bottom - $r.Top) * 0.632)
         [void][GW]::SetCursorPos($x, $y); Start-Sleep -Milliseconds 300
-        Click; Start-Sleep 2; Click
+        $handle = $game.MainWindowHandle
+        if (-not (Click $handle $x $y)) { 'the game is not in front: not clicking, trying again'; Start-Sleep 3; continue }
+        Start-Sleep 2
+        [void](Click $handle $x $y)
         for ($w = 0; $w -lt 15 -and -not $world; $w++) { Start-Sleep 2; $world = Select-String -Path $Log -Pattern 'IN_WORLD' -Quiet }
     }
     if ($world) { 'world reached'; Start-Sleep $Seconds } else { 'world NOT reached' }
 } finally {
+    [void][GW]::SetCursorPos($cursor.X, $cursor.Y)
     Get-Process bb-probe -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$root*" } | Stop-Process -Force
     Start-Sleep 2
     Remove-Item -Recurse -Force "$root\user\savedata"
     Copy-Item -Recurse $backup "$root\user\savedata"
     Remove-Item -Recurse -Force $backup
     foreach ($p in $Plugins) { Remove-Item -Force (Join-Path "$root\plugins" (Split-Path $p -Leaf)) -ErrorAction SilentlyContinue }
+    foreach ($t in $kept) { Move-Item "$t.game-world-kept" $t }
     if (-not (Get-ChildItem "$root\plugins" -ErrorAction SilentlyContinue)) { Remove-Item "$root\plugins" -ErrorAction SilentlyContinue }
 }
 Select-String -Path $Log -Pattern '^Plugin|^Plugins|Engine hooks|Fault|exception 0x' | ForEach-Object { $_.Line }
