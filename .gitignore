@@ -1,0 +1,30 @@
+# Build output
+out/
+build/
+*.o
+*.obj
+*.dll
+*.exe
+*.lib
+*.a
+*.pdb
+
+# Game data must never be committed
+dvdroot_ps4/
+*.dcx
+*.bin
+user/
+keys.json
+
+# Editors and OS
+.vs/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
