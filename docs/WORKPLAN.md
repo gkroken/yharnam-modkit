@@ -97,33 +97,47 @@ hooking. The guide is `port/docs/PLUGINS.md`.
   are left out with a log line (unit test).
 - **Not tried:** online play in game, and a DLL that fails `LoadLibrary`.
 
-## Phase 2: Core API v1
+## Phase 2: Core API v1: done (port 1840f95, aedd07c, de208a0)
 
-These are thin wrappers over `src/engine_hooks.h`. Addresses are Binary Ninja addresses (base
-`0x400000`), as in both projects.
+The plan was thin wrappers over `src/engine_hooks.h`. What landed is bbhost's own API shape,
+with a stub and chains of this port's (`src/plugin_hooks.c`). Addresses are Binary Ninja
+addresses (base `0x400000`).
 
-- [ ] `log`, `config_get` (the plugin's own ini section), `plugin_dir`.
-- [ ] Memory and code:
-  - [ ] `read` (`bb_read`, safe on unmapped addresses) and `write`.
-  - [ ] `patch`, which writes only if the expected bytes are there (`bb_patch`).
-  - [ ] `guest_addr`.
-- [ ] Hooks:
-  - [ ] `hook` is a function-entry hook (`bb_hook_entry`), `hook_mid` a mid-function hook
-        (`bb_hook_mid`, with `BbRegs`) and `hook_call` a call-site hook (`bb_hook_call`).
-  - [ ] All three are only valid during `bb_plugin_image`. After seal they return an error.
-- [ ] `call_guest`: call a game function (main thread only; checked at runtime).
-- [ ] `on_frame(fn, user)`.
-- [ ] `include/bbport_plugin.h`: a C ABI header with `BB_GUEST_ABI` (sysv_abi) for any callback
-      the game calls. Plugins must be built with clang or MinGW; MSVC can't produce those
-      callbacks.
-- [ ] Match bbhost's `bbhost_plugin.h` (API v12) in names, signatures and behaviour, so a
-      plugin moves between the runtimes with a recompile. Loading bbhost's compiled DLLs
-      directly is nice to have, not promised. See decision 1.
-      **License decided (2026-11-04):** the project is GPL-3.0-or-later, so bbhost code
-      (GPL-3.0-or-later) may be reused directly, with attribution in the file headers.
+- [x] `log`, `config` (`plugins.ini`), `plugin_dir`, `data_dir`, `mods_dir` (Phase 1).
+- [x] Memory: `read` (safe on unmapped addresses), `write` (never into code), `patch` (expected
+      bytes checked; idempotent), `guest_addr` (Phase 1).
+- [x] Hooks: bbhost's `hook` (v1 frame) and `hook2` (`BbHookCtx`: rewrite arguments and xmm,
+      skip with a value), not the planned `hook_mid`/`hook_call`, which bbhost's API doesn't
+      have.
+  - [x] Only during `bb_plugin_image`; earlier or after the seal they return 2.
+  - [x] Several plugins on one function chain in load order.
+  - [x] Refused over any bytes another hook or patch rewrote: the port's own and other plugins'.
+  - [x] The stub's copy of a guest TCB load (`gs:[0]`) gets the TEB slot displacement. A hook
+        is refused when that can't be done.
+  - [x] A skip returns the value in `rax` and `xmm0` (bbhost: `rax` only).
+- [x] `call_guest`: from the game's main thread, once the game runs (not in `bb_plugin_image`),
+      only into code. `al` is set for variadic callees.
+- [x] `on_frame(fn, user)` (Phase 1).
+- [x] The header is bbhost's `include/bbhost_plugin.h` (API 16), unchanged, not a new
+      `bbport_plugin.h`. Same names, signatures and table layout, so bbhost plugins build here.
+      Loading their DLLs directly works as far as the table goes. Functions this host lacks
+      return their failure values.
+- [x] Clang/MinGW only for callbacks the game calls directly (`BB_GUEST_ABI`); documented in
+      `port/docs/PLUGINS.md`.
 
-**Done when** an example plugin installs an entry hook on a known function, counts calls, and
-patches a byte site with a check of the original bytes.
+**Done:**
+- **Unit test:** `plugin-host-test` makes 150 checks. Its hook scenario has three plugins and
+  fake functions covering every rule above. My mutation script kills 31 of 32 mutations; the
+  survivor is the host's own seal check, which is equivalent because `plugin_hooks` refuses
+  after the seal too.
+- **In game (1.09):**
+  - `hook2` on SprjFlipper::Update (BN `0x2434770`) counts exactly one call per frame.
+  - A second plugin's hook joins the chain. The reviewer saw 300/600 hits on both (port-1840f95).
+  - An overlapping hook and an early `call_guest` are refused.
+  - A TCB-entry hook's stub load matches the image's (`0x1508`). The reviewer ran 55 such hooks
+    (port-de208a0).
+- **Not shown in game:** a real `call_guest`. No side-effect-free game function is known yet;
+  Phase 3's accessors will use it.
 
 ## Phase 3: Game-state API
 
