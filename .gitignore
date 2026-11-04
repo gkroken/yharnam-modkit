@@ -28,3 +28,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 .venv/
+
+# The coder/reviewer handoff files (instructions, reports, ledger): local to the review
+# workflow, never committed.
+/code_review/
