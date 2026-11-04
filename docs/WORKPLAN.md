@@ -43,9 +43,9 @@ before `bb_main_frame_install()`. That is the only window before `bb_hooks_seal(
         starting the plugin.
   - [ ] `bb_plugin_image(const BbHostApi*)`: the image is loaded and patched, and hooks are
         still open. A nonzero return unloads the plugin.
-  - [ ] `bb_plugin_init`: bbhost calls this before the eboot loads, for `register_hle`. Decide
-        whether to support it. HLE in this port lives in `runtime_*.c`, so the likely answer is
-        "accepted, no HLE".
+  - [ ] `bb_plugin_init`: called first, before `bb_plugin_image`, so bbhost plugins that use
+        it for `log` and `config` load unchanged. `register_hle` is in the API table but returns
+        "unsupported" and logs it (HLE in this port lives in `runtime_*.c`). See decision 2.
 - [ ] API versioning: `api->version` plus a struct size, so new fields can be added without
       breaking old plugins.
 - [ ] Off switches:
@@ -82,10 +82,11 @@ These are thin wrappers over `src/engine_hooks.h`. Addresses are Binary Ninja ad
 - [ ] `include/bbport_plugin.h`: a C ABI header with `BB_GUEST_ABI` (sysv_abi) for any callback
       the game calls. Plugins must be built with clang or MinGW; MSVC can't produce those
       callbacks.
-- [ ] **Compatibility decision:** compare against bbhost's `bbhost_plugin.h` (API v12). Copy
-      only the names and signatures, or support bbhost plugins as they are? bbhost is
-      GPL-3.0-or-later and yharnam-pc is GPL-2.0-or-later. Combining them is allowed, but the
-      result is GPL-3. Record the decision here.
+- [ ] Match bbhost's `bbhost_plugin.h` (API v12) in names, signatures and behaviour, so a
+      plugin moves between the runtimes with a recompile. Loading bbhost's compiled DLLs
+      directly is nice to have, not promised. See decision 1.
+      **License decided (2026-11-04):** the project is GPL-3.0-or-later, so bbhost code
+      (GPL-3.0-or-later) may be reused directly, with attribution in the file headers.
 
 **Done when** an example plugin installs an entry hook on a known function, counts calls, and
 patches a byte site with a check of the original bytes.
@@ -141,14 +142,18 @@ rebuild.
 The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`scripts/emevd.py`,
 `scripts/esd.py`), but only for its built-in features. Open this to mods.
 
-- [ ] A mod can include `event/*.emevd.edit.py` or a declarative `.toml`: "add event N with these
-      instructions", "insert InitializeEvent".
-- [ ] The talk equivalent goes in `script/talk/`.
+- [ ] Edit files are **data only** (TOML or JSON, never code), so installing a mod never runs
+      code from it. See decision 3.
+- [ ] Event edits (`event/*.emevd.edit.toml`): add or replace events and insert
+      `InitializeEvent`, using named instructions (`SetEventFlag(1234, ON)`). Names come from the
+      community's Bloodborne instruction tables (to check: DarkScript3's EMEDF for Bloodborne).
+- [ ] Talk edits (`script/talk/*.talk.edit.toml`): a few high-level operations only, such as
+      "add a menu option to NPC X that runs event Y", not raw state machines.
 - [ ] `prepare.py` applies them to the player's own files, after file mods and in mod order.
 - [ ] Mods ship **edits, not FromSoftware files**. That avoids redistribution problems and lets
       two mods edit the same file.
-- [ ] Optional: import from Soulstruct or DarkScript3 sources, for authors who already use
-      those tools.
+- [ ] Converters from DarkScript3 and Soulstruct output to edit files, so authors keep their
+      tools.
 
 **Done when** two mods each add an event to the same `m*.emevd.dcx`, and both work in game.
 
@@ -183,12 +188,18 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
 | A plugin crashes the game | The loader can't prevent native crashes. Per-plugin off switches and `BB_PLUGINS=0` keep recovery easy, and the log names the last plugin hook entered. |
 | Online fairness | Gameplay plugins turn off online, as cheats do. |
 | Upstream changes fast (2.x releases weekly) | Keep plugin code in separate files with few, small hooks into existing code. |
-| Licensing (bbhost GPL-3, port GPL-2+) | Decided in Phase 2 and recorded here. |
+| Licensing (bbhost GPL-3, port GPL-2+) | Decided: the whole project is GPL-3.0-or-later. |
 
-## Open decisions
+## Decisions (all made 2026-11-04)
 
-1. Is bbhost API compatibility an aim (plugins run unchanged on both), or only a style guide?
-2. Will we support `bb_plugin_init` and HLE replacement, or only the image stage?
-3. Format for mod-shipped EMEVD/ESD edits: Python edit scripts, a declarative TOML, or Soulstruct
-   sources?
-4. Upstream (PR into yharnam-pc) or maintain our own fork long-term?
+1. **bbhost compatibility:** match bbhost's API names, signatures and behaviour, so a plugin
+   ports with a recompile and no code changes. Loading bbhost's compiled DLLs directly is nice
+   to have, not promised.
+2. **Early stage:** `bb_plugin_init` is supported. `register_hle` returns "unsupported" for now,
+   to be added only if a popular plugin needs it.
+3. **Script-edit format:** data-only edit files (TOML or JSON) with named instructions, plus
+   converters from DarkScript3 and Soulstruct. No code ships in mods, edits from several mods
+   merge into the player's own files, and no FromSoftware files are redistributed.
+4. **Upstream or own fork:** our own fork until the API is
+   well-tested in real play, then a pull request. An early heads-up issue upstream (Phase 7) is
+   still worthwhile.

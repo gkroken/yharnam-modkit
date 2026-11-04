@@ -18,5 +18,8 @@ while the game plays, not only replace files.
 
 Clone with `git clone --recursive`, or run `git submodule update --init --recursive`.
 
+**License:** GPL-3.0-or-later ([LICENSE](LICENSE)). This is a non-commercial project. Copyleft
+keeps every fork and plugin open source.
+
 Local install used for testing: `C:\games\Bloodborne\bbport-windows` (release) and
 `C:\games\Bloodborne\game` (CUSA03173 1.09 dump). No game files go in this repository.
