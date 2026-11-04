@@ -1,0 +1,5 @@
+# Text files keep LF in the repository whatever the editor saves (tool-eeb344e-N2).
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.dll binary

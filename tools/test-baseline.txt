@@ -1,12 +1,13 @@
 # What tools/test-port.sh compares against: upstream yharnam-pc 2.3.2 plus our plugins branch, on
 # Windows 11 (MSYS2 CLANG64, python.org 3.13 with capstone 5.0.7, keystone-engine 0.9.2 and
-# numpy 2.5.4). Measured 2026-11-04 at port b4ae1ae. Format: one "<kind> <value>" per line; a
+# numpy 2.5.4). Measured 2026-11-04 at port b4ae1ae; C floors raised at cd2a2bf for
+# plugin-host-test (34 targets, 27 pass). Format: one "<kind> <value>" per line; a
 # '#' starts a comment. Change a line only in a commit that says why.
 
 # Floors. A run with fewer targets, passes or tests, or more skips, is a problem: that is a build
 # or environment that stopped testing, not a clean run. Raise them when tests are added.
-c-min-targets 33
-c-min-pass 26
+c-min-targets 34
+c-min-pass 27
 py-min-ran 394
 py-max-skipped 16
 

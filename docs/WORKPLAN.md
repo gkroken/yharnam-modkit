@@ -50,38 +50,51 @@ more are skipped. A broken build or a missing Python therefore can't look like a
 
 **Done (2026-11-04):** our own build reaches the title screen and plays well (RTX 4090, 91 engine hooks installed).
 
-## Phase 1: Plugin loader (in the fork)
+## Phase 1: Plugin loader (in the fork): done (port 54808d0, cd2a2bf; tool: the hello example)
 
-Load plugins in `bb_engine_install()` (`src/engine_features.c`), after the built-in features and
-before `bb_main_frame_install()`. That is the only window before `bb_hooks_seal()` locks hooking.
+Plugins load in `bb_engine_install()` (`src/engine_features.c`), after the built-in features
+and before `bb_main_frame_install()`. That is the only window before `bb_hooks_seal()` locks
+hooking. The guide is `port/docs/PLUGINS.md`.
 
-- [ ] `src/plugin_host.c/.h`: find `*.dll` in `<exe dir>/plugins`, then
-      `<saves>/plugins` (a later folder overrides a file of the same name). Load each with
-      `LoadLibraryW`.
-- [ ] Lifecycle, as in bbhost:
-  - [ ] `bb_plugin_info` (optional data): name, version, flags. The launcher can read it without
-        starting the plugin.
-  - [ ] `bb_plugin_image(const BbHostApi*)`: the image is loaded and patched, and hooks are
-        still open. A nonzero return unloads the plugin.
-  - [ ] `bb_plugin_init`: called first, before `bb_plugin_image`, so bbhost plugins that use
-        it for `log` and `config` load unchanged. `register_hle` is in the API table but returns
-        "unsupported" and logs it (HLE in this port lives in `runtime_*.c`). See decision 2.
-- [ ] API versioning: `api->version` plus a struct size, so new fields can be added without
-      breaking old plugins.
-- [ ] Off switches:
-  - [ ] `BB_PLUGINS=0` loads none.
-  - [ ] Enable/disable per plugin in `bbport.ini` (`plugin_<name>=0`).
-  - [ ] `BB_ENGINE_HOOKS=0` also disables plugins.
-- [ ] **Frame multiplexer.** `bb_on_main_frame` has a fixed number of slots
-      (`bb_main_frame_available`). The plugin host takes one slot and dispatches it to every
-      plugin's `on_frame`.
-- [ ] Log what loaded and what was refused (and why) to `user\last_run.log`.
-- [ ] Online play: turn off plugins flagged `gameplay` while online, the same way cheats are
-      turned off.
-- [ ] Example `plugins/examples/hello` logs a line every 300 frames.
+- [x] `src/plugin_host.c/.h`: `*.dll` in `<data>/plugins`, then `<user>/plugins` (a later folder
+      replaces a file of the same name; `BB_PLUGIN_DIRS` overrides both). Each is loaded with
+      `LoadLibraryExW` and the altered search path, so a plugin's own folder is searched first
+      for its DLLs.
+- [x] Lifecycle, as in bbhost:
+  - [x] `bb_plugin_info` (optional): name, version, flags. A launcher reading it without
+        starting the plugin is Phase 6.
+  - [x] `bb_plugin_init`, then `bb_plugin_image`. A nonzero return unloads the plugin together
+        with its callbacks. The image functions refuse during init.
+  - [x] `register_hle` returns 1 and logs it (decision 2).
+- [x] API versioning: bbhost's API 16 table (`version`, `size`). A plugin built for a newer API
+      is left out. Every field is set; the missing ones return their failure values and log
+      once.
+- [x] Off switches:
+  - [x] `BB_PLUGINS=0` loads none.
+  - [x] Per plugin, in `<user>\plugins.ini`, `[plugins] <name>=0/1`, with opt-in plugins off
+        until turned on. This replaces the earlier `bbport.ini` idea: it is bbhost's shape, and
+        it leaves the launcher's own file alone (port-54808d0-N1).
+  - [x] `BB_ENGINE_HOOKS=0` disables plugins too (`bb_engine_install` never runs).
+- [x] **Frame multiplexer:** the host takes one main-frame slot only when a plugin is loaded, and
+      runs every `on_frame` callback from it.
+- [x] Log lines (`Plugins:` / `Plugin <name>:`) for what loaded and what was left out, and why.
+- [x] Online play (`BB_ONLINE=1` without `BB_COOP=1`, the cheats' rule) leaves out plugins
+      flagged gameplay.
+- [x] Memory functions: `guest_addr`, `read`, `write` (never into code), and `patch` (checks
+      expected bytes; idempotent).
+- [x] Example `plugins/examples/hello`, built by `tools/build-plugins.sh` (and by the test runner).
+      It logs time and frame rate every `interval` seconds, set in plugins.ini. The workplan
+      first said "every 300 frames"; time is the better example, because the frame rate varies.
 
-**Done when** the hello plugin loads, ticks and unloads cleanly, `BB_PLUGINS=0` skips it, and
-a broken DLL (missing exports, too-new API) is refused with a log line instead of crashing.
+**Done:**
+- **Unit test:** `plugin-host-test` makes 100 checks with ten test plugins, and the reviewer's
+  mutation probe kills all its mutations.
+- **In game (1.09):** hello loads, reads its option and ticks (5 s, 564 frames, and so on);
+  `BB_PLUGINS=0` and `plugins.ini` off leave it out (reviewer, port-cd2a2bf); engine hooks
+  stay at 91.
+- **Broken plugins:** missing exports, a too-new API, bad or duplicate names and failing phases
+  are left out with a log line (unit test).
+- **Not tried:** online play in game, and a DLL that fails `LoadLibrary`.
 
 ## Phase 2: Core API v1
 

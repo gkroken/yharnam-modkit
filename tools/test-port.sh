@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds and runs the port's tests on Windows: every CMake "*-test" target (C/C++), then the
-# Python suite. The port's build.sh stops after bb-probe.exe on Windows (no --test there), so
+# Builds the example plugins, then builds and runs the port's tests on Windows: every CMake
+# "*-test" target (C/C++), then the Python suite. The port's build.sh stops after bb-probe.exe on Windows (no --test there), so
 # this is the one command for both the coder and the reviewer.
 #
 # It compares against tools/test-baseline.txt and exits 0 only when:
@@ -89,12 +89,22 @@ run_py() {
     skipped=${skipped:-0}
     grep -a -E '^Ran |^(OK|FAILED)' "$log" | sed 's/^/Python: /'
     # The full id is in the parentheses: module.Class.method, or unittest.loader._FailedTest.<module>.
-    grep -a -E '^(ERROR|FAIL): ' "$log" | sed -E 's/^[A-Z]+: [^ ]+ \((.*)\)$/\1/' > "$logs/py-failed.txt"
+    grep -a -E '^(ERROR|FAIL): ' "$log" | sed -E 's/^[A-Z]+: [^ ]+ \(([^)]*)\).*$/\1/' > "$logs/py-failed.txt"
     compare py-known "$logs/py-failed.txt"
     (( ran >= $(floor py-min-ran) )) || problem "only $ran Python tests ran; the baseline has $(floor py-min-ran)"
     (( skipped <= $(floor py-max-skipped) )) || problem "$skipped Python tests skipped; the baseline allows $(floor py-max-skipped)"
 }
 
+# The example plugins (plugins/examples) must keep building against the port's header.
+run_examples() {
+    if bash "$root/tools/build-plugins.sh" > "$logs/examples.log" 2>&1; then
+        echo "Examples: $(grep -c '^built ' "$logs/examples.log") built"
+    else
+        problem "an example plugin does not build: $(grep '^FAIL' "$logs/examples.log" | head -3)"
+    fi
+}
+
+[[ $mode != --py-only ]] && run_examples
 [[ $mode != --py-only ]] && run_c
 [[ $mode != --c-only ]] && run_py
 if (( problems )); then echo "$problems problem(s) against the baseline"; exit 1; fi

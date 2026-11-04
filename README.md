@@ -11,10 +11,11 @@ while the game plays, not only replace files.
 
 | Path | What |
 |---|---|
-| `port/` | yharnam-pc submodule (upstream 2.3.2 for now; to be switched to our fork, branch `plugins`) |
+| `port/` | yharnam-pc submodule: our fork `gkroken/yharnam-pc`, branch `plugins` (upstream 2.3.2 plus the plugin host; the guide is `port/docs/PLUGINS.md`) |
 | `docs/` | Plan and research |
 | `sdk/` | *(Phase 2)* plugin headers and the clang toolchain file |
-| `plugins/` | *(Phase 1+)* example plugins and the Lua host (`bb_lua`) |
+| `plugins/examples/` | Example plugins (`hello`). `bash tools/build-plugins.sh --install` builds them into `port/plugins/`. The Lua host (`bb_lua`) comes in Phase 4. |
+| `tools/` | `test-port.sh` (the test gate, against `test-baseline.txt`) and `build-plugins.sh`. |
 
 Clone with `git clone --recursive`, or run `git submodule update --init --recursive`.
 
