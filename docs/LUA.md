@@ -81,6 +81,21 @@ writes from callbacks are fine. A call that can't answer returns `nil` (reads) o
 | `bb.message(text[, seconds])` | A banner (3 s by default). |
 | `bb.text(text, seconds, x, y[, scale[, align]])` | A line placed at `x, y` (fractions of the window). `align` is `"left"`, `"centre"` or `"right"`, optionally with `" bottom"`. |
 
+**The keyboard and mouse** (read once a frame, before the callbacks; the window must have the
+focus):
+
+| Call | What it does |
+|---|---|
+| `bb.input.down(key)` | `true` while the key is held. `key` is a name (`"f5"`, `"g"`, `"space"`, `"lshift"`, `"up"`, `"kp1"`...) or an SDL scancode. |
+| `bb.input.pressed(key)` | `true` in the frame the key went down. |
+| `bb.input.on_key(key, fn)` | A hotkey: `fn()` in the frame the key goes down, while playing (not in a menu or a text box). |
+| `bb.input.playing()` | `true` in the world with no menu or text box up. |
+| `bb.input.mouse()` | `{left, right, middle, back, forward}` held, `clicked` (the same names, this frame), `dx`, `dy` (motion this frame), `wheel`. |
+
+Keys still do what they do in the game too. Pick a hotkey nothing else uses: the port's default
+keys leave F1 to F8, F11 and F12 free. F9 and F10 can open the map, and `bbport.ini`'s `key_*`
+lines can rebind the game's keys.
+
 ## What a script can't do
 
 - **Change the game in online play.** With `BB_ONLINE=1` (not co-op), `bb.flag.set`,

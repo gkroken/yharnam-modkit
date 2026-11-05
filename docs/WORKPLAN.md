@@ -164,7 +164,10 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
 - [ ] UI and input:
   - [x] `show_message` and `show_text`, drawn by the overlay (port b148dcb).
   - [ ] `replace_text`.
-  - [ ] `input` and `input_take`.
+  - [x] `input`: keys, mouse buttons, clicks, motion and wheel, counted apart from the game's
+        reads; `playing` needs a player in the world. Port c850d52, 37dbc53. In Lua as
+        `bb.input` with hotkeys (`bb.input.on_key`), pressed by `game-world.ps1 -Keys` in the world.
+  - [ ] `input_take` (keys the game no longer sees).
   - [ ] Plugin options listed in the guide's Mods tab.
 - [x] Each call has a host-side test against fake structures at the real addresses
       (game-state-test, flag-delivery-test, params-test). The in-game checks run through
@@ -194,6 +197,7 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
         sugar wasn't built: plain calls keep errors visible.
   - [x] Player and effects: `bb.player.stat/position/block`, `bb.effect.apply/has`,
         `bb.chr.list`, `bb.message` and `bb.text`.
+  - [x] Keyboard and mouse: `bb.input.down/pressed/playing/mouse` and `bb.input.on_key` hotkeys.
 - [ ] Raw memory and hooks are left out of Lua at first. Scripts stay safe, and C plugins cover
       the rest.
 - [ ] Sandbox: no `os.execute` and no `io` outside the mod's own folder. `require` reads only
@@ -244,6 +248,9 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
 - [ ] Keep the `plugins` branch rebased on upstream releases, and keep plugin code in its own
       files with small hooks into existing ones, so rebases stay cheap.
 - [ ] Submit it as a pull request once the API is stable.
+- [ ] Report to upstream (port-37dbc53-N1): `runtime_pad.c` (the pad read) and
+      `bbgpu_mouse_stage_position` call `SDL_GetMouseState` off SDL's thread. The plugin input's
+      held-buttons snapshot (window.cpp) could serve them too.
 
 ---
 

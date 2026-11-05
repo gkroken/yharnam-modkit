@@ -170,6 +170,14 @@ static int host_effect_has(void *chr, int32_t id) {
         if (g_effects[i] == id && chr == g_effect_target) return 1;
     return 0;
 }
+/* The keyboard and mouse the fake window reports: set by the test before each frame. */
+static BbInput g_input_now;
+static int g_input_calls;
+static int host_input(BbInput *out) {
+    ++g_input_calls;
+    *out = g_input_now;
+    return 0;
+}
 static int host_show_text(const char *text, float seconds, float x, float y, float scale, uint32_t align) {
     (void)seconds, (void)y, (void)scale;
     snprintf(g_text, sizeof g_text, "%s", text);
@@ -423,6 +431,7 @@ int main(int argc, char **argv) {
     api.sp_effect_has = host_effect_has;
     api.show_text = host_show_text;
     api.mods_dir = host_mods_dir;
+    api.input = host_input;
 
     CHECK(image(&api) == 0 && g_frame);
     /* Loading: the good ones loaded, the syntax error stopped at load, in name order. */
@@ -576,6 +585,67 @@ int main(int argc, char **argv) {
         CHECK(g_flags[6] == 1 && !strcmp(g_weapon_attack, "7") && g_echoes == 1);
         SetEnvironmentVariableA("BB_COOP", NULL);
         SetEnvironmentVariableA("BB_ONLINE", NULL);
+    }
+
+    /* The keyboard and mouse: read once a frame for every script, presses as edges, hotkeys only
+     * while playing. */
+    {
+        g_api = api;
+        memset(&g_input_now, 0, sizeof g_input_now);
+        g_input_now.key[62] = 1;  /* F5 held while the script loads: nothing is read yet */
+        CHECK(load_alone(argv[1], "keys",
+                         "local hits = 0\n"
+                         "bb.input.on_key('F5', function() hits = hits + 1; bb.log('hotkey', hits) end)\n"
+                         "bb.on_frame(function()\n"
+                         "  local m = bb.input.mouse()\n"
+                         "  bb.log('frame', bb.input.down('f5'), bb.input.pressed('f5'), bb.input.down(62), bb.input.playing(),\n"
+                         "         m.left, m.clicked.right, m.clicked.left, m.dx, m.wheel)\n"
+                         "end)\n"
+                         "bb.log('names', select('#', pcall(bb.input.down, 'nope')), (pcall(bb.input.down, 'nope')),\n"
+                         "       (pcall(bb.input.down, 600)), bb.input.down('KP0'), bb.input.down('f12'), bb.input.down('lshift'))\n"
+                         "bb.log('before frames', bb.input.down('f5'), bb.input.playing())\n"));
+        CHECK(strstr(g_log, "keys: names 2 false false false false false"));
+        CHECK(strstr(g_log, "keys: before frames false false"));
+        const int calls = g_input_calls;
+        /* 1: F5 goes down while playing, left held, right clicked, motion and a notch down. */
+        g_input_now.playing = 1;
+        g_input_now.buttons = 1;
+        g_input_now.pressed = 2;
+        g_input_now.dx = 2.5f;
+        g_input_now.wheel = -1;
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(g_input_calls == calls + 1);  /* once a frame */
+        CHECK(strstr(g_log, "keys: hotkey 1") && strstr(g_log, "keys: frame true true true true true true false 2.5 -1.0"));
+        CHECK(strstr(g_log, "hotkey 1") < strstr(g_log, "keys: frame"));  /* hotkeys before on_frame */
+        /* 2: still held: no new press. */
+        g_input_now.pressed = 0;
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(!strstr(g_log, "hotkey") && strstr(g_log, "keys: frame true false true true"));
+        /* 3: up. 4: down again, but in a menu: pressed, but no hotkey. */
+        g_input_now.key[62] = 0;
+        g_frame(g_frame_user);
+        g_input_now.key[62] = 1;
+        g_input_now.playing = 0;
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(!strstr(g_log, "hotkey") && strstr(g_log, "keys: frame true true true false"));
+        /* 5: up, 6: down while playing: the second hotkey. */
+        g_input_now.key[62] = 0;
+        g_frame(g_frame_user);
+        g_input_now.key[62] = 1;
+        g_input_now.playing = 1;
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "keys: hotkey 2"));
+        /* Other names: kp0 (98), f12 (69), lshift (225). */
+        g_input_now.key[98] = g_input_now.key[69] = g_input_now.key[225] = 1;
+        CHECK(load_alone(argv[1], "names", "bb.on_frame(function() bb.log('held', bb.input.down('kp0'), bb.input.down('F12'), bb.input.down('LShift'), bb.input.down('a')) end)\n"));
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "names: held true true true false"));
+        memset(&g_input_now, 0, sizeof g_input_now);
     }
 
     /* Alone, each in a fresh copy of the DLL: loops that catch the budget error. */

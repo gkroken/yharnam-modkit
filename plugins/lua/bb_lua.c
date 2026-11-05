@@ -392,6 +392,13 @@ static const luaL_Reg PARAM[] = {{"get", l_param_get}, {"set", l_param_set}, {"i
 static const luaL_Reg PLAYER[] = {{"stat", l_player_stat}, {"position", l_player_position}, {"block", l_player_block}, {NULL, NULL}};
 static const luaL_Reg EFFECT[] = {{"apply", l_effect_apply}, {"has", l_effect_has}, {NULL, NULL}};
 static const luaL_Reg CHR[] = {{"list", l_chr_list}, {NULL, NULL}};
+static int l_input_down(lua_State *L);
+static int l_input_pressed(lua_State *L);
+static int l_input_playing(lua_State *L);
+static int l_input_mouse(lua_State *L);
+static int l_input_on_key(lua_State *L);
+static const luaL_Reg INPUT_FNS[] = {{"down", l_input_down}, {"pressed", l_input_pressed}, {"playing", l_input_playing},
+                                 {"mouse", l_input_mouse}, {"on_key", l_input_on_key}, {NULL, NULL}};
 
 static const luaL_Reg BB[] = {
     {"log", l_log},
@@ -440,7 +447,7 @@ static void open_sandbox(lua_State *L) {
     static const struct {
         const char *name;
         const luaL_Reg *fns;
-    } groups[] = {{"flag", FLAG}, {"param", PARAM}, {"player", PLAYER}, {"effect", EFFECT}, {"chr", CHR}};
+    } groups[] = {{"flag", FLAG}, {"param", PARAM}, {"player", PLAYER}, {"effect", EFFECT}, {"chr", CHR}, {"input", INPUT_FNS}};
     /* Argument errors name the function from the loaded-modules table: listing bb and its parts
      * there makes them say "bb.effect.has" (tool-9bb9566-N1). Scripts can't reach the table. */
     luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_LOADED_TABLE);
@@ -459,7 +466,7 @@ static void open_sandbox(lua_State *L) {
     lua_setglobal(L, "bb");
     lua_pushcfunction(L, l_log);
     lua_setglobal(L, "print");
-    static const char *const lists[] = {"bb_frames", "bb_flags", "bb_loads", NULL};
+    static const char *const lists[] = {"bb_frames", "bb_flags", "bb_loads", "bb_keys", NULL};
     for (const char *const *l = lists; *l; ++l) {
         lua_newtable(L);
         lua_setfield(L, LUA_REGISTRYINDEX, *l);
@@ -867,6 +874,135 @@ done:
     names_free(&disabled);
     names_free(&order);
 }
+/* --- the keyboard and mouse ---------------------------------------------------------------------- */
+
+/* Read once a frame, before any script's callbacks, and shared by every script (the host's input
+ * has one reader: the presses are since the last read). g_prev is the frame before's keys, so a
+ * press is "down now, up then". Before the first frame (while scripts load) nothing is down. */
+static BbInput g_in, g_prev_in;
+
+static void read_input(void) {
+    g_prev_in = g_in;
+    if (g_api->input(&g_in)) memset(&g_in, 0, sizeof g_in);  /* headless: nothing held */
+}
+
+/* Key names, as SDL names its scancodes (lower case): "a".."z", "0".."9", "f1".."f12", "space",
+ * "enter", "escape", "tab", "backspace", the arrows, "insert", "delete", "home", "end", "pageup",
+ * "pagedown", "lshift", "rshift", "lctrl", "rctrl", "lalt", "ralt", "kp0".."kp9". A number is a
+ * scancode as is. */
+static int key_code(lua_State *L, int at) {
+    if (lua_type(L, at) == LUA_TNUMBER) {
+        const lua_Integer code = luaL_checkinteger(L, at);
+        luaL_argcheck(L, code > 0 && code < 512, at, "a scancode is 1..511");
+        return (int)code;
+    }
+    const char *name = luaL_checkstring(L, at);
+    char k[16];
+    size_t n = 0;
+    for (; name[n] && n < sizeof k - 1; ++n) k[n] = (char)((name[n] >= 'A' && name[n] <= 'Z') ? name[n] + 32 : name[n]);
+    k[n] = 0;
+    if (!name[n]) {
+        if (n == 1 && k[0] >= 'a' && k[0] <= 'z') return 4 + (k[0] - 'a');
+        if (n == 1 && k[0] >= '1' && k[0] <= '9') return 30 + (k[0] - '1');
+        if (n == 1 && k[0] == '0') return 39;
+        if (k[0] == 'f' && n >= 2 && n <= 3) {
+            const int f = atoi(k + 1);
+            if (f >= 1 && f <= 12 && k[1] != '0') return 57 + f;
+        }
+        if (!strncmp(k, "kp", 2) && n == 3 && k[2] >= '0' && k[2] <= '9') return k[2] == '0' ? 98 : 89 + (k[2] - '1');
+        static const struct { const char *name; int code; } named[] = {
+            {"enter", 40}, {"return", 40}, {"escape", 41}, {"backspace", 42}, {"tab", 43}, {"space", 44},
+            {"insert", 73}, {"home", 74}, {"pageup", 75}, {"delete", 76}, {"end", 77}, {"pagedown", 78},
+            {"right", 79}, {"left", 80}, {"down", 81}, {"up", 82},
+            {"lctrl", 224}, {"lshift", 225}, {"lalt", 226}, {"rctrl", 228}, {"rshift", 229}, {"ralt", 230},
+        };
+        for (size_t i = 0; i < sizeof named / sizeof *named; ++i)
+            if (!strcmp(k, named[i].name)) return named[i].code;
+    }
+    return luaL_argerror(L, at, lua_pushfstring(L, "no key named '%s'", name));
+}
+
+/* bb.input.down(key) -> true while held (the window focused). */
+static int l_input_down(lua_State *L) {
+    lua_pushboolean(L, g_in.key[key_code(L, 1)] != 0);
+    return 1;
+}
+
+/* bb.input.pressed(key) -> true in the frame it went down. */
+static int l_input_pressed(lua_State *L) {
+    const int code = key_code(L, 1);
+    lua_pushboolean(L, g_in.key[code] && !g_prev_in.key[code]);
+    return 1;
+}
+
+/* bb.input.playing() -> true in the world with no menu or text box up, the window focused. */
+static int l_input_playing(lua_State *L) {
+    lua_pushboolean(L, g_in.playing != 0);
+    return 1;
+}
+
+/* bb.input.mouse() -> {left, right, middle, back, forward (held), clicked = {same, this frame},
+ * dx, dy (motion this frame while playing), wheel (notches, up positive)}. */
+static int l_input_mouse(lua_State *L) {
+    static const char *const names[] = {"left", "right", "middle", "back", "forward"};
+    lua_createtable(L, 0, 9);
+    lua_createtable(L, 0, 5);
+    for (int i = 0; i < 5; ++i) {
+        lua_pushboolean(L, (g_in.buttons >> i) & 1);
+        lua_setfield(L, -3, names[i]);
+        lua_pushboolean(L, (g_in.pressed >> i) & 1);
+        lua_setfield(L, -2, names[i]);
+    }
+    lua_setfield(L, -2, "clicked");
+    lua_pushnumber(L, g_in.dx);
+    lua_setfield(L, -2, "dx");
+    lua_pushnumber(L, g_in.dy);
+    lua_setfield(L, -2, "dy");
+    lua_pushnumber(L, g_in.wheel);
+    lua_setfield(L, -2, "wheel");
+    return 1;
+}
+
+/* bb.input.on_key(key, fn): fn() in each frame the key goes down while playing (a hotkey: not
+ * while typing in a text box or in a menu). */
+static int l_input_on_key(lua_State *L) {
+    const int code = key_code(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    lua_getfield(L, LUA_REGISTRYINDEX, "bb_keys");
+    lua_createtable(L, 2, 0);
+    lua_pushinteger(L, code);
+    lua_rawseti(L, -2, 1);
+    lua_pushvalue(L, 2);
+    lua_rawseti(L, -2, 2);
+    lua_rawseti(L, -2, (lua_Integer)lua_rawlen(L, -2) + 1);
+    lua_pop(L, 1);
+    return 0;
+}
+
+/* The hotkeys pressed this frame, each script's in the order registered. */
+static void dispatch_keys(void) {
+    if (!g_in.playing) return;
+    for (int i = 0; i < g_count; ++i) {
+        Script *s = &g_scripts[i];
+        if (!s->on) continue;
+        lua_getfield(s->L, LUA_REGISTRYINDEX, "bb_keys");
+        const lua_Integer n = (lua_Integer)lua_rawlen(s->L, -1);
+        for (lua_Integer k = 1; k <= n && s->on; ++k) {
+            lua_rawgeti(s->L, -1, k);
+            lua_rawgeti(s->L, -1, 1);
+            const lua_Integer code = lua_tointeger(s->L, -1);
+            lua_pop(s->L, 1);
+            if (code > 0 && code < 512 && g_in.key[code] && !g_prev_in.key[code]) {
+                lua_rawgeti(s->L, -1, 2);
+                lua_remove(s->L, -2);
+                call(s, 0);
+            } else {
+                lua_pop(s->L, 1);
+            }
+        }
+        lua_settop(s->L, 0);
+    }
+}
 
 /* --- the host's callbacks ----------------------------------------------------------------------- */
 
@@ -912,6 +1048,8 @@ static void on_world(uint32_t block, void *user) {
 
 static void on_frame(void *user) {
     (void)user;
+    read_input();
+    dispatch_keys();
     dispatch("bb_frames", NULL, NULL, 0);
 }
 
