@@ -45,6 +45,7 @@ typedef struct {
     long long left;       /* the current call's budget */
     int spent;            /* the budget ran out in this call: every instruction raises until it ends */
     int on;
+    int told_online;      /* its first refused change in online play was logged */
 } Script;
 
 static const BbHostApi *g_api;
@@ -141,6 +142,30 @@ static int l_config(lua_State *L) {
 
 /* --- the game: flags, params, the player, effects, characters, text --------------------------------- */
 
+/* Online play (tool-9614890-F1): the host leaves out native plugins that change the game, the way
+ * cheats are turned off. Scripts can't be told apart that way, so here every call that changes the
+ * game does nothing and returns false; reading, watching and text still work. The host's own test:
+ * BB_ONLINE=1 without BB_COOP=1. */
+static int g_online;
+
+static int env_is(const char *name, const char *value) {
+    char got[16];
+    const DWORD n = GetEnvironmentVariableA(name, got, sizeof got);
+    return n && n < sizeof got && !strcmp(got, value);
+}
+
+/* 1 (and the call should return false) when this is online play. Logged once per script. */
+static int refused_online(lua_State *L, const char *call) {
+    if (!g_online) return 0;
+    Script *s = script_of(L);
+    if (!s->told_online) {
+        s->told_online = 1;
+        g_api->log("%s: online play: %s and every other call that changes the game do nothing", s->name, call);
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
 /* bb.flag.get(id) -> true/false, or nil when its block doesn't exist (yet). */
 static int l_flag_get(lua_State *L) {
     int v = 0;
@@ -152,7 +177,9 @@ static int l_flag_get(lua_State *L) {
 /* bb.flag.set(id, on) -> true when written. */
 static int l_flag_set(lua_State *L) {
     luaL_checktype(L, 2, LUA_TBOOLEAN);
-    lua_pushboolean(L, !g_api->event_flag_set((uint32_t)luaL_checkinteger(L, 1), lua_toboolean(L, 2)));
+    const uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
+    if (refused_online(L, "bb.flag.set")) return 1;
+    lua_pushboolean(L, !g_api->event_flag_set(id, lua_toboolean(L, 2)));
     return 1;
 }
 
@@ -205,6 +232,10 @@ static int l_param_get(lua_State *L) {
 /* bb.param.set(table, id, field, value) -> true when written (value: a number or text). */
 static int l_param_set(lua_State *L) {
     const char *value = luaL_tolstring(L, 4, NULL);
+    luaL_checkstring(L, 1);
+    luaL_checkinteger(L, 2);
+    luaL_checkstring(L, 3);
+    if (refused_online(L, "bb.param.set")) return 1;
     lua_pushboolean(L, !g_api->param_set(luaL_checkstring(L, 1), (uint32_t)luaL_checkinteger(L, 2), luaL_checkstring(L, 3), value));
     return 1;
 }
@@ -236,7 +267,9 @@ static int l_param_ids(lua_State *L) {
 static int l_player_stat(lua_State *L) {
     const char *name = luaL_checkstring(L, 1);
     if (lua_gettop(L) >= 2) {
-        lua_pushboolean(L, !g_api->player_stat_set(name, (int64_t)luaL_checkinteger(L, 2)));
+        const int64_t value = (int64_t)luaL_checkinteger(L, 2);
+        if (refused_online(L, "bb.player.stat (setting)")) return 1;
+        lua_pushboolean(L, !g_api->player_stat_set(name, value));
         return 1;
     }
     int64_t v = 0;
@@ -274,7 +307,10 @@ static void *chr_arg(lua_State *L, int at) {
 
 /* bb.effect.apply(id[, chr]) -> true when applied. bb.effect.has(id[, chr]) -> true/false. */
 static int l_effect_apply(lua_State *L) {
-    lua_pushboolean(L, !g_api->sp_effect_apply(chr_arg(L, 2), (int32_t)luaL_checkinteger(L, 1)));
+    void *chr = chr_arg(L, 2);
+    const int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    if (refused_online(L, "bb.effect.apply")) return 1;
+    lua_pushboolean(L, !g_api->sp_effect_apply(chr, id));
     return 1;
 }
 static int l_effect_has(lua_State *L) {
@@ -890,6 +926,8 @@ BB_PLUGIN_EXPORT int bb_plugin_image(const BbHostApi *api) {
         api->log("this host's API is older than 16: not starting");
         return 1;
     }
+    g_online = env_is("BB_ONLINE", "1") && !env_is("BB_COOP", "1");
+    if (g_online) api->log("online play: scripts run, but their calls that change the game do nothing");
     load_folder(api->plugin_dir("lua"), "");
     load_mods(api->mods_dir ? api->mods_dir() : NULL);
     int on = 0;

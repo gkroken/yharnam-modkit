@@ -83,6 +83,11 @@ writes from callbacks are fine. A call that can't answer returns `nil` (reads) o
 
 ## What a script can't do
 
+- **Change the game in online play.** With `BB_ONLINE=1` (not co-op), `bb.flag.set`,
+  `bb.param.set`, `bb.player.stat(name, value)` and `bb.effect.apply` do nothing and return
+  false; the log says so once per script. Reading, watching and text still work. This matches
+  the plugin host, which leaves native plugins that change the game out of online play.
+
 Scripts get base Lua, `table`, `string`, `math`, `utf8`, `coroutine`, and `os.clock`, `os.time`
 and `os.date`. They can't read or write files, run programs, load code (`load`, `loadfile`,
 `dofile`, `require`) or bytecode (`string.dump`, binary chunks), or reach `debug`.

@@ -230,6 +230,27 @@ static int load_with_config(const char *dll, const char *tag, const char *json, 
     return ok;
 }
 
+/* One script alone, in a fresh copy of the DLL with its own folder; g_log has what it logged. */
+static int load_alone(const char *dll, const char *tag, const char *text) {
+    char copy[MAX_PATH], folder[MAX_PATH], path[MAX_PATH];
+    snprintf(copy, sizeof copy, "%s\\bb_lua_%s.dll", g_dir, tag);
+    if (!CopyFileA(dll, copy, FALSE)) return 0;
+    snprintf(g_dir + strlen(g_dir), MAX_PATH - strlen(g_dir), "\\%s", tag);
+    CreateDirectoryA(g_dir, NULL);
+    snprintf(folder, sizeof folder, "%s\\lua", g_dir);
+    CreateDirectoryA(folder, NULL);
+    snprintf(path, sizeof path, "%s\\%s.lua", folder, tag);
+    FILE *f = fopen(path, "wb");
+    fputs(text, f);
+    fclose(f);
+    g_log[0] = 0;
+    HMODULE m = LoadLibraryA(copy);
+    int (*image)(const BbHostApi *) = m ? (int (*)(const BbHostApi *))(void *)GetProcAddress(m, "bb_plugin_image") : NULL;
+    const int ok = image && image(&g_api) == 0;
+    *strrchr(g_dir, '\\') = 0;
+    return ok;
+}
+
 static void write_script(const char *name, const char *text) {
     char path[MAX_PATH];
     snprintf(path, sizeof path, "%s\\lua\\%s", g_dir, name);
@@ -526,6 +547,35 @@ int main(int argc, char **argv) {
         CHECK(image3 && image3(&g_api) == 0);
         CHECK(strstr(g_log, "gamma main running") && strstr(g_log, "long off running"));
         SetEnvironmentVariableA("BB_MODS_CONFIG", NULL);
+    }
+
+    /* tool-9614890-F1: online play (BB_ONLINE=1 without BB_COOP=1) refuses every call that changes
+     * the game, logged once; reading and text still work. Co-op lets them through, as the host does. */
+    {
+        static const char *const writes =
+            "bb.log('online writes', bb.flag.set(6, true), bb.param.set('EquipParamWeapon', 2000000, 'attackBasePhysics', 7),\n"
+            "       bb.player.stat('echoes', 1), bb.effect.apply(2200))\n"
+            "bb.log('online reads', bb.flag.get(6), bb.param.get('EquipParamWeapon', 2000000, 'attackBasePhysics'),\n"
+            "       bb.player.stat('echoes'), bb.effect.has(2200), bb.text('still shown', 3, 0.5, 0.5))\n";
+        g_api = api;
+        g_flags[6] = 0;
+        snprintf(g_weapon_attack, sizeof g_weapon_attack, "92");
+        g_echoes = 245;
+        g_effect_count = 0;
+        const int effects_before = 0;
+        SetEnvironmentVariableA("BB_ONLINE", "1");
+        CHECK(load_alone(argv[1], "online", writes));
+        CHECK(strstr(g_log, "online play: scripts run, but their calls that change the game do nothing"));
+        CHECK(strstr(g_log, "online: online writes false false false false"));
+        CHECK(g_flags[6] == 0 && !strcmp(g_weapon_attack, "92") && g_echoes == 245 && g_effect_count == effects_before);
+        CHECK(strstr(g_log, "online: online reads false 92 245 false true"));
+        CHECK(count("and every other call that changes the game do nothing") == 1);  /* once per script */
+        SetEnvironmentVariableA("BB_COOP", "1");
+        CHECK(load_alone(argv[1], "coop", writes));
+        CHECK(!strstr(g_log, "online play") && strstr(g_log, "coop: online writes true true true true"));
+        CHECK(g_flags[6] == 1 && !strcmp(g_weapon_attack, "7") && g_echoes == 1);
+        SetEnvironmentVariableA("BB_COOP", NULL);
+        SetEnvironmentVariableA("BB_ONLINE", NULL);
     }
 
     /* Alone, each in a fresh copy of the DLL: loops that catch the budget error. */

@@ -45,8 +45,9 @@ bb.on_frame(function()
 end)
 ```
 
-3. Start the game. `port/user/last_run.log` shows `Plugin lua: hello: hello from Lua`, and the
-   banner appears once your character loads.
+3. Start the game. The terminal running `run.py` shows `Plugin lua: hello: hello from Lua`
+   (started from the launcher, it's on the Log page and in `last_run.log` beside your saves), and
+   the banner appears once your character loads.
 
 Every call is listed in `docs/LUA.md`. To ship scripts with a mod, put them in
 `mods/<your mod>/scripts/`; they're named `<your mod>/<file>`. Ready-made scripts are in
@@ -66,14 +67,16 @@ hook and a patch). Add a folder under `plugins/examples/`, and `build-plugins.sh
 
 ## 4. When something goes wrong
 
-- **The log:** `port/user/last_run.log`. Every `Plugins:` line says what loaded or was left out,
-  and why. A plugin's own lines start `Plugin <name>:`.
+- **The log:** the terminal running `run.py`; from the launcher, its Log page and `last_run.log`
+  beside your saves. Every `Plugins:` line says what loaded or was left out, and why. A plugin's
+  own lines start `Plugin <name>:`.
 - **A Lua script that errors, loops forever or uses too much memory** is stopped alone, with a
   banner. The game and the other scripts carry on.
 - **Turning things off:**
   - `BB_PLUGINS=0` loads no plugins;
   - `[plugins] <name> = 0` in `port/user/plugins.ini` turns one off;
-  - online play leaves out every plugin that changes the game.
+  - online play leaves out every native plugin that changes the game, and Lua scripts' calls
+    that change it do nothing (`docs/LUA.md`).
 
 ## Where things are
 
