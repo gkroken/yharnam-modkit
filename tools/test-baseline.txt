@@ -7,8 +7,8 @@
 
 # Floors. A run with fewer targets, passes or tests, or more skips, is a problem: that is a build
 # or environment that stopped testing, not a clean run. Raise them when tests are added.
-c-min-targets 38
-c-min-pass 31
+c-min-targets 39
+c-min-pass 32
 py-min-ran 394
 py-max-skipped 16
 

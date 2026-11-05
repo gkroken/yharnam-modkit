@@ -170,7 +170,9 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
       that `chr_list` returns), `sp_effect_has`. Port a87a447, ebb8113.
 - [ ] UI and input:
   - [x] `show_message` and `show_text`, drawn by the overlay (port b148dcb).
-  - [ ] `replace_text`.
+  - [x] `replace_text`: bbhost's way (port 128d4b0, 73cba1c): the image's leas and pointers to
+        a UTF-16 string name a copy of the new text. In the world the map texture path's _9999
+        became _9998 in the files the game opened.
   - [x] `input`: keys, mouse buttons, clicks, motion and wheel, counted apart from the game's
         reads; `playing` needs a player in the world. Port c850d52, 37dbc53. In Lua as
         `bb.input` with hotkeys (`bb.input.on_key`), pressed by `game-world.ps1 -Keys` in the world.
@@ -190,7 +192,8 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
 - `weapon_tweak`: EquipParamWeapon row 2000000's `attackBasePhysics` went 92 -> 150 at start,
   and a probe read 150 back in the world.
 - Since then: `show_message`/`show_text` (port b148dcb), input and `input_take` (c850d52 to
-  ad77c97), and `loading_screen` (7383ee0), and the warps (a46c5c9). Still open: `replace_text`.
+  ad77c97), and `loading_screen` (7383ee0), the warps (a46c5c9) and `replace_text` (128d4b0). Phase 3's API
+  is all in; Lua warps are the one open design (above).
 
 ## Phase 4: Lua scripting (`bb_lua.dll`)
 
