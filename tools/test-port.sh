@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds the example plugins, then builds and runs the port's tests on Windows: every CMake
-# "*-test" target (C/C++), then the Python suite. The port's build.sh stops after bb-probe.exe on Windows (no --test there), so
+# Builds the example plugins and the Lua host and runs the tool's own tests, then builds and runs
+# the port's tests on Windows: every CMake "*-test" target (C/C++), then the Python suite. The port's build.sh stops after bb-probe.exe on Windows (no --test there), so
 # this is the one command for both the coder and the reviewer.
 #
 # It compares against tools/test-baseline.txt and exits 0 only when:
@@ -104,7 +104,19 @@ run_examples() {
     fi
 }
 
+# The tool's own tests (tests/*.c, built by build-plugins.sh): the Lua host against a fake host.
+run_tool_tests() {
+    local exe="$root/out/tests/lua-host-test.exe"
+    if [[ ! -x $exe ]]; then problem "no $exe (did build-plugins.sh run?)"; return; fi
+    if timeout 120 "$exe" "$root/out/plugins/bb_lua.dll" > "$logs/lua-host-test.log" 2>&1; then
+        echo "Tool tests: $(tail -1 "$logs/lua-host-test.log")"
+    else
+        problem "lua-host-test failed: $(grep -m1 'check failed' "$logs/lua-host-test.log")"
+    fi
+}
+
 [[ $mode != --py-only ]] && run_examples
+[[ $mode != --py-only ]] && run_tool_tests
 [[ $mode != --py-only ]] && run_c
 [[ $mode != --c-only ]] && run_py
 if (( problems )); then echo "$problems problem(s) against the baseline"; exit 1; fi

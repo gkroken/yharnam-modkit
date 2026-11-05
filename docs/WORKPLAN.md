@@ -182,7 +182,8 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
 
 ## Phase 4: Lua scripting (`bb_lua.dll`)
 
-- [ ] Embed Lua 5.4 as a regular plugin, so the port itself stays C and Lua stays optional.
+- [x] Embed Lua 5.4 as a regular plugin (`plugins/lua`, `bb_lua.dll`; Lua 5.4.7 vendored in
+      `third_party/`, checksum-verified), so the port itself stays C and Lua stays optional.
 - [ ] Scripts come from `plugins/lua/*.lua` and from `mods/<mod>/scripts/*.lua`, so a mod ships
       its scripts with its files.
 - [ ] Bindings:
