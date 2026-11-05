@@ -167,7 +167,9 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
   - [x] `input`: keys, mouse buttons, clicks, motion and wheel, counted apart from the game's
         reads; `playing` needs a player in the world. Port c850d52, 37dbc53. In Lua as
         `bb.input` with hotkeys (`bb.input.on_key`), pressed by `game-world.ps1 -Keys` in the world.
-  - [ ] `input_take` (keys the game no longer sees).
+  - [x] `input_take`: keys, mouse buttons, wheel and motion taken from the game while playing
+        (`src/input_take.c`, port ad77c97). In Lua as `bb.input.take`, every script's together.
+        In the world, taking G kept the gestures menu shut while the hotkey still fired.
   - [ ] Plugin options listed in the guide's Mods tab.
 - [x] Each call has a host-side test against fake structures at the real addresses
       (game-state-test, flag-delivery-test, params-test). The in-game checks run through
@@ -197,7 +199,8 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
         sugar wasn't built: plain calls keep errors visible.
   - [x] Player and effects: `bb.player.stat/position/block`, `bb.effect.apply/has`,
         `bb.chr.list`, `bb.message` and `bb.text`.
-  - [x] Keyboard and mouse: `bb.input.down/pressed/playing/mouse` and `bb.input.on_key` hotkeys.
+  - [x] Keyboard and mouse: `bb.input.down/pressed/playing/mouse`, `bb.input.on_key` hotkeys,
+        and `bb.input.take`.
 - [ ] Raw memory and hooks are left out of Lua at first. Scripts stay safe, and C plugins cover
       the rest.
 - [ ] Sandbox: no `os.execute` and no `io` outside the mod's own folder. `require` reads only
@@ -251,6 +254,8 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
 - [ ] Report to upstream (port-37dbc53-N1): `runtime_pad.c` (the pad read) and
       `bbgpu_mouse_stage_position` call `SDL_GetMouseState` off SDL's thread. The plugin input's
       held-buttons snapshot (window.cpp) could serve them too.
+- [ ] Before the PR (port-ad77c97-N1): build.sh's Linux link line lacks `input_bindings.c` and
+      `mouse_camera.c` (upstream's own gap), and now `input_take.c` too.
 
 ---
 

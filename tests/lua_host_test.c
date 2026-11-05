@@ -178,6 +178,20 @@ static int host_input(BbInput *out) {
     *out = g_input_now;
     return 0;
 }
+/* The last input_take the fake host got. */
+static uint16_t g_take_codes[512];
+static size_t g_take_n;
+static uint32_t g_take_buttons;
+static int g_take_wheel, g_take_motion, g_take_calls;
+static int host_input_take(const uint16_t *codes, size_t n, uint32_t buttons, int wheel, int motion) {
+    ++g_take_calls;
+    g_take_n = n;
+    if (n) memcpy(g_take_codes, codes, n * sizeof *codes);
+    g_take_buttons = buttons;
+    g_take_wheel = wheel;
+    g_take_motion = motion;
+    return 0;
+}
 static int host_show_text(const char *text, float seconds, float x, float y, float scale, uint32_t align) {
     (void)seconds, (void)y, (void)scale;
     snprintf(g_text, sizeof g_text, "%s", text);
@@ -432,6 +446,7 @@ int main(int argc, char **argv) {
     api.show_text = host_show_text;
     api.mods_dir = host_mods_dir;
     api.input = host_input;
+    api.input_take = host_input_take;
 
     CHECK(image(&api) == 0 && g_frame);
     /* Loading: the good ones loaded, the syntax error stopped at load, in name order. */
@@ -646,6 +661,40 @@ int main(int argc, char **argv) {
         g_log[0] = 0;
         g_frame(g_frame_user);
         CHECK(strstr(g_log, "keys: hotkey 2"));
+        /* bb.input.take: two scripts' takes together (the host has one taker); a script that stops
+         * gives its own back; take() gives the rest back; a bad name changes nothing. */
+        {
+            char other[MAX_PATH];
+            snprintf(other, sizeof other, "%s\\take", g_dir);
+            CreateDirectoryA(other, NULL);
+            snprintf(other + strlen(other), sizeof other - strlen(other), "\\lua");
+            CreateDirectoryA(other, NULL);
+            snprintf(other + strlen(other), sizeof other - strlen(other), "\\b_stops.lua");
+            FILE *f = fopen(other, "wb");
+            fputs("bb.log('b took', bb.input.take{keys = {'g', 'h'}, wheel = true})\n"
+                  "local n = 0\n"
+                  "bb.on_frame(function() n = n + 1; if n == 2 then error('b stops here') end end)\n", f);
+            fclose(f);
+        }
+        g_take_calls = 0;
+        memset(&g_input_now, 0, sizeof g_input_now);
+        CHECK(load_alone(argv[1], "take",
+                         "bb.log('a took', bb.input.take{keys = {'F6', 'g'}, buttons = {'right'}})\n"
+                         "bb.log('bad name', (pcall(bb.input.take, {keys = {'nope'}})), (pcall(bb.input.take, {buttons = {'thumb'}})))\n"
+                         "local n = 0\n"
+                         "bb.on_frame(function() n = n + 1; if n == 3 then bb.log('given back', bb.input.take()) end end)\n"));
+        CHECK(strstr(g_log, "b_stops: b took true") && strstr(g_log, "take: a took true") && strstr(g_log, "take: bad name false false"));
+        CHECK(g_take_calls == 2);  /* b's, then a's; the bad names made no call */
+        CHECK(g_take_n == 3 && g_take_codes[0] == 10 && g_take_codes[1] == 11 && g_take_codes[2] == 63);  /* g h f6, once each */
+        CHECK(g_take_buttons == 2 && g_take_wheel == 1 && g_take_motion == 0);
+        g_frame(g_frame_user);
+        CHECK(g_take_calls == 2);
+        g_frame(g_frame_user);  /* b stops: its h and the wheel go back, g stays (a has it) */
+        CHECK(strstr(g_log, "b_stops: stopped:") && g_take_calls == 3);
+        CHECK(g_take_n == 2 && g_take_codes[0] == 10 && g_take_codes[1] == 63 && g_take_buttons == 2 && g_take_wheel == 0);
+        g_frame(g_frame_user);  /* a gives everything back */
+        CHECK(strstr(g_log, "take: given back true") && g_take_calls == 4 && g_take_n == 0 && g_take_buttons == 0);
+
         /* Other names: kp0 (98), f12 (69), lshift (225). */
         g_input_now.key[98] = g_input_now.key[69] = g_input_now.key[225] = 1;
         CHECK(load_alone(argv[1], "names", "bb.on_frame(function() bb.log('held', bb.input.down('kp0'), bb.input.down('F12'), bb.input.down('LShift'), bb.input.down('a')) end)\n"));

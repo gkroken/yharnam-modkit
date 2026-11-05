@@ -46,6 +46,9 @@ typedef struct {
     int spent;            /* the budget ran out in this call: every instruction raises until it ends */
     int on;
     int told_online;      /* its first refused change in online play was logged */
+    uint32_t take_keys[16];  /* bb.input.take: its keys (scancode bits), buttons, wheel, motion */
+    uint32_t take_buttons;
+    int take_wheel, take_motion;
 } Script;
 
 static const BbHostApi *g_api;
@@ -397,8 +400,10 @@ static int l_input_pressed(lua_State *L);
 static int l_input_playing(lua_State *L);
 static int l_input_mouse(lua_State *L);
 static int l_input_on_key(lua_State *L);
+static int l_input_take(lua_State *L);
 static const luaL_Reg INPUT_FNS[] = {{"down", l_input_down}, {"pressed", l_input_pressed}, {"playing", l_input_playing},
-                                 {"mouse", l_input_mouse}, {"on_key", l_input_on_key}, {NULL, NULL}};
+                                 {"mouse", l_input_mouse}, {"on_key", l_input_on_key}, {"take", l_input_take},
+                                 {NULL, NULL}};
 
 static const luaL_Reg BB[] = {
     {"log", l_log},
@@ -474,8 +479,15 @@ static void open_sandbox(lua_State *L) {
 }
 
 /* Stops a script for good: the reason to the log and on screen. */
+static int push_takes(void);
+
 static void stop(Script *s, const char *why) {
     s->on = 0;
+    /* What it took goes back to the game. */
+    memset(s->take_keys, 0, sizeof s->take_keys);
+    s->take_buttons = 0;
+    s->take_wheel = s->take_motion = 0;
+    push_takes();
     g_api->log("%s: stopped: %s", s->name, why);
     char banner[160];
     snprintf(banner, sizeof banner, "Lua script %s stopped (see the log)", s->name);
@@ -978,6 +990,80 @@ static int l_input_on_key(lua_State *L) {
     lua_rawseti(L, -2, (lua_Integer)lua_rawlen(L, -2) + 1);
     lua_pop(L, 1);
     return 0;
+}
+
+/* The host has one taker (input_take replaces the last call): it gets every running script's
+ * takes together. 0 when the host accepted. */
+static int push_takes(void) {
+    uint16_t codes[512];
+    size_t n = 0;
+    uint32_t buttons = 0;
+    int wheel = 0, motion = 0, any = 0;
+    for (int i = 0; i < g_count; ++i) {
+        const Script *s = &g_scripts[i];
+        if (!s->on) continue;
+        buttons |= s->take_buttons;
+        wheel |= s->take_wheel;
+        motion |= s->take_motion;
+        any |= s->take_buttons || s->take_wheel || s->take_motion;
+    }
+    for (int code = 1; code < 512; ++code)
+        for (int i = 0; i < g_count; ++i)
+            if (g_scripts[i].on && (g_scripts[i].take_keys[code / 32] >> (code % 32) & 1)) {
+                codes[n++] = (uint16_t)code;
+                break;
+            }
+    static int took;  /* never called input_take with nothing to give back: leave other plugins' alone */
+    if (!n && !any && !took) return 0;
+    took = n || any;
+    return g_api->input_take(codes, n, buttons, wheel, motion);
+}
+
+/* bb.input.take{keys = {...}, buttons = {"left", ...}, wheel = bool, motion = bool} -> true when
+ * taken: while playing, these no longer reach the game (the script still reads them). Replaces
+ * the script's last take; bb.input.take() gives everything back. */
+static int l_input_take(lua_State *L) {
+    Script *s = script_of(L);
+    uint32_t keys[16] = {0}, buttons = 0;
+    int wheel = 0, motion = 0;
+    if (!lua_isnoneornil(L, 1)) {
+        luaL_checktype(L, 1, LUA_TTABLE);
+        lua_getfield(L, 1, "keys");
+        if (!lua_isnil(L, -1)) {
+            luaL_argcheck(L, lua_istable(L, -1), 1, "keys is a list of key names");
+            const int list = lua_gettop(L);
+            for (lua_Integer i = 1, len = (lua_Integer)lua_rawlen(L, list); i <= len; ++i) {
+                lua_rawgeti(L, list, i);
+                const int code = key_code(L, lua_gettop(L));
+                keys[code / 32] |= 1u << (code % 32);
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+        lua_getfield(L, 1, "buttons");
+        if (!lua_isnil(L, -1)) {
+            static const char *const names[] = {"left", "right", "middle", "back", "forward", NULL};
+            luaL_argcheck(L, lua_istable(L, -1), 1, "buttons is a list of mouse button names");
+            const int list = lua_gettop(L);
+            for (lua_Integer i = 1, len = (lua_Integer)lua_rawlen(L, list); i <= len; ++i) {
+                lua_rawgeti(L, list, i);
+                buttons |= 1u << luaL_checkoption(L, lua_gettop(L), NULL, names);
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+        lua_getfield(L, 1, "wheel");
+        wheel = lua_toboolean(L, -1);
+        lua_getfield(L, 1, "motion");
+        motion = lua_toboolean(L, -1);
+        lua_pop(L, 2);
+    }
+    memcpy(s->take_keys, keys, sizeof keys);
+    s->take_buttons = buttons;
+    s->take_wheel = wheel;
+    s->take_motion = motion;
+    lua_pushboolean(L, push_takes() == 0);
+    return 1;
 }
 
 /* The hotkeys pressed this frame, each script's in the order registered. */

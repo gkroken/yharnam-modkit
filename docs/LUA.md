@@ -89,10 +89,12 @@ focus):
 | `bb.input.down(key)` | `true` while the key is held. `key` is a name (`"f5"`, `"g"`, `"space"`, `"lshift"`, `"up"`, `"kp1"`...) or an SDL scancode. |
 | `bb.input.pressed(key)` | `true` in the frame the key went down. |
 | `bb.input.on_key(key, fn)` | A hotkey: `fn()` in the frame the key goes down, while playing (not in a menu or a text box). |
+| `bb.input.take{keys = {...}, buttons = {...}, wheel = true, motion = true}` | While playing, these no longer reach the game: a hotkey on G without the gestures menu opening. The script still reads them. Buttons are `"left"`, `"right"`, `"middle"`, `"back"`, `"forward"`; `motion` keeps the mouse from turning the camera. Replaces the script's last take; `bb.input.take()` gives everything back, and so does the script stopping. `true` when taken. |
 | `bb.input.playing()` | `true` in the world with no menu or text box up. |
 | `bb.input.mouse()` | `{left, right, middle, back, forward}` held, `clicked` (the same names, this frame), `dx`, `dy` (motion this frame), `wheel`. |
 
-Keys still do what they do in the game too. Pick a hotkey nothing else uses: the port's default
+Keys still do what they do in the game too, unless a script takes them. Otherwise pick a hotkey
+nothing else uses: the port's default
 keys leave F1 to F8, F11 and F12 free. F9 and F10 can open the map, and `bbport.ini`'s `key_*`
 lines can rebind the game's keys.
 
