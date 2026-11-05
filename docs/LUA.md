@@ -69,7 +69,7 @@ writes from callbacks are fine. A call that can't answer returns `nil` (reads) o
 | `bb.player.stat(name)` | `level`, `echoes`, `hp`, `vitality`... as a number, or `nil`. |
 | `bb.player.stat(name, value)` | Sets it; `true` when written. |
 | `bb.player.position()` | `x, y, z, yaw`, or `nil` with no player. |
-| `bb.replace_text(address, text)` | While the script loads (its top level) only: the game's UTF-16 string at a Binary Ninja address of the 1.09 image shows `text` instead, wherever the code and data name it. Returns the references moved; 0 means nothing names that string. The first replacement of a string stays. `bb.replace_text(0x4d686cc, "maptpf:/%s/%s_9998.tpf")` |
+| `bb.replace_text(address, text)`, `bb.replace_text{[address] = text, ...}` | While the script loads (its top level) only: the game's UTF-16 string at a Binary Ninja address of the 1.09 image shows `text` instead, wherever the code and data name it. Returns the references moved; 0 means nothing names those strings. The first replacement of a string stays. `bb.replace_text(0x4d686cc, "maptpf:/%s/%s_9998.tpf")`. For many strings use the table: one pass over the game's code for all of them, where each separate call is a pass of its own (a fraction of a second each). |
 | `bb.loading()` | `true` while a loading screen is up: a load, a warp, a death. `bb.on_world_load` runs while it is still up. |
 | `bb.player.block()` | The map block (`0x18010000` is m24_01, Central Yharnam), or `nil`. |
 | `bb.chr.list()` | The world's characters, the player first. Each entry has `ins`, `handle`, `npc`, `model`, `hp`, `max_hp`, `team`, `type`, `player`, `x`, `y`, `z`. Use the list within the frame you got it in. |

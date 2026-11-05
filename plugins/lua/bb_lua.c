@@ -371,26 +371,49 @@ static int l_chr_list(lua_State *L) {
 
 static int g_loading_scripts;  /* 1 while bb_plugin_image loads the scripts: the image phase */
 
-/* bb.replace_text(address, text) -> the references moved (0: nothing names that string). The
- * game's UTF-16 string at a Binary Ninja address shows `text` (UTF-8) instead, wherever the code
- * and data name it. Only while the script loads (its top level): the host rewrites the code
- * before the game runs. The first replacement of a string stays. */
-static int l_replace_text(lua_State *L) {
-    const lua_Integer at = luaL_checkinteger(L, 1);
+/* One address and text from the stack into a host item: the text as a new UTF-16 string. */
+static void text_item(lua_State *L, int at_index, int text_index, BbText *out) {
+    const lua_Integer at = luaL_checkinteger(L, at_index);
     size_t len = 0;
-    const char *text = luaL_checklstring(L, 2, &len);
-    luaL_argcheck(L, at >= 0x400000, 1, "a Binary Ninja address of the 1.09 image");
-    luaL_argcheck(L, len > 0 && len <= 4096 * 3 && strlen(text) == len, 2, "text: 1 to 4096 characters, no NUL");
-    if (!g_loading_scripts) return luaL_error(L, "bb.replace_text works only while the script loads (its top level)");
+    const char *text = luaL_checklstring(L, text_index, &len);
+    luaL_argcheck(L, at >= 0x400000, at_index, "a Binary Ninja address of the 1.09 image");
+    luaL_argcheck(L, len > 0 && len <= 4096 * 3 && strlen(text) == len, text_index, "text: 1 to 4096 characters, no NUL");
     const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, (int)len, NULL, 0);
-    luaL_argcheck(L, n > 0 && n <= 4096, 2, "text: valid UTF-8, up to 4096 characters");
-    wchar_t *wide = malloc(((size_t)n + 1) * sizeof *wide);
-    if (!wide) return luaL_error(L, "out of memory");
+    luaL_argcheck(L, n > 0 && n <= 4096, text_index, "text: valid UTF-8, up to 4096 characters");
+    /* A userdata, so Lua frees it even when a later item raises an error. */
+    wchar_t *wide = lua_newuserdatauv(L, ((size_t)n + 1) * sizeof *wide, 0);
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, (int)len, wide, n);
     wide[n] = 0;
-    const BbText item = {(uint64_t)at, (const uint16_t *)wide};
-    const int moved = g_api->replace_text(&item, 1);
-    free(wide);  /* the host keeps its own copy */
+    out->bn_addr = (uint64_t)at;
+    out->text = (const uint16_t *)wide;
+}
+
+/* bb.replace_text(address, text) or bb.replace_text{[address] = text, ...} -> the references
+ * moved (0: nothing names those strings). The game's UTF-16 strings at Binary Ninja addresses
+ * show the texts (UTF-8) instead, wherever the code and data name them. Only while the script
+ * loads (its top level): the host rewrites the code before the game runs. A table is one pass
+ * over the image however many strings it holds; one call per string is a pass each
+ * (tool-8604ff7-N1). The first replacement of a string stays. */
+static int l_replace_text(lua_State *L) {
+    enum { MAX_AT_ONCE = 4096 };
+    static BbText items[MAX_AT_ONCE];
+    size_t n = 0;
+    if (lua_istable(L, 1)) {
+        lua_settop(L, 1);
+        lua_newtable(L);  /* 2: keeps each UTF-16 copy alive until the host has them */
+        lua_pushnil(L);
+        while (lua_next(L, 1)) {  /* key at 3, value at 4 */
+            if (n == MAX_AT_ONCE) return luaL_error(L, "bb.replace_text: more than %d strings at once", MAX_AT_ONCE);
+            luaL_argcheck(L, lua_isinteger(L, 3), 1, "keys are Binary Ninja addresses");
+            text_item(L, 3, 4, &items[n++]);
+            lua_rawseti(L, 2, (lua_Integer)n);  /* the copy into the keeper */
+            lua_pop(L, 1);                       /* the value; the key stays for lua_next */
+        }
+    } else {
+        text_item(L, 1, 2, &items[n++]);
+    }
+    if (!g_loading_scripts) return luaL_error(L, "bb.replace_text works only while the script loads (its top level)");
+    const int moved = n ? g_api->replace_text(items, n) : 0;  /* the host keeps its own copies */
     if (moved < 0) return luaL_error(L, "the host refused bb.replace_text (not the 1.09 game, or too late)");
     lua_pushinteger(L, moved);
     return 1;

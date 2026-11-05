@@ -179,17 +179,20 @@ static int host_input(BbInput *out) {
     return 0;
 }
 /* The last replace_text the fake host got. */
-static uint64_t g_text_at;
+static uint64_t g_text_at, g_text_sum;
 static uint16_t g_text_utf16[64];
 static int g_replace_calls;
+static size_t g_text_count;
 static int host_replace_text(const BbText *texts, size_t count) {
     ++g_replace_calls;
-    if (count != 1) return -1;
+    g_text_count = count;
+    g_text_sum = 0;
+    for (size_t k = 0; k < count; ++k) g_text_sum += texts[k].bn_addr + texts[k].text[0];
     g_text_at = texts[0].bn_addr;
     size_t i = 0;
     for (; texts[0].text[i] && i < 63; ++i) g_text_utf16[i] = texts[0].text[i];
     g_text_utf16[i] = 0;
-    return 2;
+    return 2 * (int)count;
 }
 static int g_loading_now;
 static int host_loading(void) { return g_loading_now; }
@@ -736,6 +739,21 @@ int main(int argc, char **argv) {
         g_log[0] = 0;
         g_frame(g_frame_user);
         CHECK(strstr(g_log, "text: later false") && strstr(g_log, "only while the script loads") && g_replace_calls == 2);
+
+        /* The table form: every string in one host call (tool-8604ff7-N1); a bad entry anywhere
+         * makes no call at all; an empty table none either. */
+        g_replace_calls = 0;
+        CHECK(load_alone(argv[1], "texts",
+                         "local t = {}\n"
+                         "for i = 0, 299 do t[0x500000 + 2 * i] = 'x' .. i end\n"
+                         "bb.log('batch', bb.replace_text(t))\n"
+                         "bb.log('one bad', (pcall(bb.replace_text, {[0x500000] = 'ok', [0x10] = 'low'})),\n"
+                         "       (pcall(bb.replace_text, {[0x500000] = 'ok', name = 'x'})), (pcall(bb.replace_text, {[0x500000] = ''})))\n"
+                         "bb.log('empty', bb.replace_text({}))\n"));
+        uint64_t sum = 0;
+        for (int i = 0; i < 300; ++i) sum += 0x500000 + 2 * i + 'x';
+        CHECK(strstr(g_log, "texts: batch 600") && g_replace_calls == 1 && g_text_count == 300 && g_text_sum == sum);
+        CHECK(strstr(g_log, "texts: one bad false false false") && strstr(g_log, "texts: empty 0") && g_replace_calls == 1);
 
         /* Other names: kp0 (98), f12 (69), lshift (225). */
         g_input_now.key[98] = g_input_now.key[69] = g_input_now.key[225] = 1;
