@@ -186,11 +186,13 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
       `third_party/`, checksum-verified), so the port itself stays C and Lua stays optional.
 - [ ] Scripts come from `plugins/lua/*.lua` and from `mods/<mod>/scripts/*.lua`, so a mod ships
       its scripts with its files.
-- [ ] Bindings:
-  - [ ] Hooks: `bb.on_frame` and `bb.on_world_load`.
-  - [ ] Flags: `bb.flag.get`, `bb.flag.set` and `bb.flag.on`.
-  - [ ] Params: `bb.param[table][id].field`.
-  - [ ] Player and effects: `bb.player.*`, `bb.effect.apply` and `bb.message`.
+- [x] Bindings (docs/LUA.md):
+  - [x] Hooks: `bb.on_frame` and `bb.on_world_load`.
+  - [x] Flags: `bb.flag.get`, `bb.flag.set` and `bb.flag.on`.
+  - [x] Params: `bb.param.get/set/ids(table, id, field)`. The planned `bb.param[table][id].field`
+        sugar wasn't built: plain calls keep errors visible.
+  - [x] Player and effects: `bb.player.stat/position/block`, `bb.effect.apply/has`,
+        `bb.chr.list`, `bb.message` and `bb.text`.
 - [ ] Raw memory and hooks are left out of Lua at first. Scripts stay safe, and C plugins cover
       the rest.
 - [ ] Sandbox: no `os.execute` and no `io` outside the mod's own folder. `require` reads only

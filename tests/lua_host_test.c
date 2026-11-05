@@ -63,6 +63,111 @@ static int host_show_message(const char *text, float seconds) {
 }
 static int host_is_109(void) { return 1; }
 
+/* The game, faked: flags 1-99, one param row, a player, two characters, an effect list. */
+static int g_flags[100];
+static void (*g_flag_cb)(uint32_t, int, void *);
+static void (*g_load_cb)(uint32_t, void *);
+static char g_weapon_attack[16] = "92";
+static int64_t g_echoes = 245;
+static int g_effects[8], g_effect_count;
+static void *g_effect_target;
+static char g_text[128];
+static float g_text_x;
+static uint32_t g_text_align;
+static int host_flag_get(uint32_t id, int *v) {
+    if (id >= 100) return 1;
+    *v = g_flags[id];
+    return 0;
+}
+static int host_flag_set(uint32_t id, int v) {
+    if (id >= 100) return 1;
+    g_flags[id] = v;
+    return 0;
+}
+static int host_on_flag(void (*fn)(uint32_t, int, void *), void *user) {
+    (void)user;
+    g_flag_cb = fn;
+    return 0;
+}
+static int host_on_load(void (*fn)(uint32_t, void *), void *user) {
+    (void)user;
+    g_load_cb = fn;
+    return 0;
+}
+static int host_param_get(const char *table, uint32_t id, const char *field, char *out, size_t n) {
+    if (strcmp(table, "EquipParamWeapon") || id != 2000000 || strcmp(field, "attackBasePhysics")) return 1;
+    snprintf(out, n, "%s", g_weapon_attack);
+    return 0;
+}
+static int host_param_set(const char *table, uint32_t id, const char *field, const char *value) {
+    if (strcmp(table, "EquipParamWeapon") || id != 2000000 || strcmp(field, "attackBasePhysics")) return 1;
+    snprintf(g_weapon_attack, sizeof g_weapon_attack, "%s", value);
+    return 0;
+}
+static int host_param_ids(const char *table, uint32_t *ids, size_t max, size_t *count) {
+    if (strcmp(table, "EquipParamWeapon")) return 1;
+    static const uint32_t all[3] = {1000, 2000000, 2000100};
+    *count = 3;
+    for (size_t i = 0; ids && i < max && i < 3; ++i) ids[i] = all[i];
+    return 0;
+}
+static int host_stat_get(const char *name, int64_t *v) {
+    if (strcmp(name, "echoes")) return 1;
+    *v = g_echoes;
+    return 0;
+}
+static int host_stat_set(const char *name, int64_t v) {
+    if (strcmp(name, "echoes")) return 1;
+    g_echoes = v;
+    return 0;
+}
+static int host_position(float xyz[3], float *yaw) {
+    xyz[0] = 1.5f, xyz[1] = -2.0f, xyz[2] = 3.25f;
+    *yaw = 0.5f;
+    return 0;
+}
+static int host_block(uint32_t *b) {
+    *b = 0x18010000;
+    return 0;
+}
+static int g_npc;
+static int host_chr_list(BbChr *out, size_t max, size_t *count) {
+    *count = 2;
+    if (out && max >= 1) {
+        memset(&out[0], 0, sizeof out[0]);
+        out[0].ins = &g_echoes;
+        out[0].is_player = 1;
+        out[0].npc_param = -1;
+        out[0].hp = 573;
+    }
+    if (out && max >= 2) {
+        memset(&out[1], 0, sizeof out[1]);
+        out[1].ins = &g_npc;
+        out[1].npc_param = 256000;
+        out[1].model = 2560;
+        out[1].pos[0] = 7.5f;
+    }
+    return 0;
+}
+static int host_effect_apply(void *chr, int32_t id) {
+    if (id <= 0 || g_effect_count == 8) return 1;
+    g_effect_target = chr;
+    g_effects[g_effect_count++] = id;
+    return 0;
+}
+static int host_effect_has(void *chr, int32_t id) {
+    for (int i = 0; i < g_effect_count; ++i)
+        if (g_effects[i] == id && chr == g_effect_target) return 1;
+    return 0;
+}
+static int host_show_text(const char *text, float seconds, float x, float y, float scale, uint32_t align) {
+    (void)seconds, (void)y, (void)scale;
+    snprintf(g_text, sizeof g_text, "%s", text);
+    g_text_x = x;
+    g_text_align = align;
+    return 0;
+}
+
 static int count(const char *needle) {
     int n = 0;
     for (const char *p = g_log; (p = strstr(p, needle)) != NULL; p += strlen(needle)) ++n;
@@ -159,6 +264,28 @@ int main(int argc, char **argv) {
                  "        and coroutine.wrap and string.format) then reached[#reached + 1] = 'a needed library is missing' end\n"
                  "bb.log('sandbox: ' .. (#reached == 0 and 'closed' or ('reaches ' .. table.concat(reached, ','))))\n");
     write_script("readme.txt", "not a script");
+    /* Every game binding, through the fake host. */
+    write_script("m_game.lua",
+                 "bb.log('flag 5', bb.flag.get(5), 'flag 500', bb.flag.get(500))\n"
+                 "bb.log('set flag 5', bb.flag.set(5, true), bb.flag.get(5))\n"
+                 "bb.log('attack', bb.param.get('EquipParamWeapon', 2000000, 'attackBasePhysics'),\n"
+                 "       bb.param.set('EquipParamWeapon', 2000000, 'attackBasePhysics', 150),\n"
+                 "       bb.param.get('EquipParamWeapon', 2000000, 'attackBasePhysics'),\n"
+                 "       bb.param.get('NoParam', 1, 'x'))\n"
+                 "local ids = bb.param.ids('EquipParamWeapon')\n"
+                 "bb.log('ids', #ids, ids[1], ids[3], bb.param.ids('NoParam'))\n"
+                 "bb.log('echoes', bb.player.stat('echoes'), bb.player.stat('echoes', 999), bb.player.stat('echoes'), bb.player.stat('mana'))\n"
+                 "local x, y, z, yaw = bb.player.position()\n"
+                 "bb.log('position', x, y, z, yaw, string.format('block 0x%08x', bb.player.block()))\n"
+                 "local list = bb.chr.list()\n"
+                 "bb.log('chr', #list, list[1].player, list[1].hp, list[2].player, list[2].npc, list[2].model, list[2].x)\n"
+                 "bb.log('effect', bb.effect.apply(2200), bb.effect.has(2200), bb.effect.apply(2200, list[2].ins), bb.effect.has(2200, list[2].ins),\n"
+                 "       bb.effect.apply(-1))\n"
+                 "bb.log('text', bb.message('hi'), bb.text('placed', 3, 0.25, 0.5, 1, 'right bottom'))\n"
+                 "bb.flag.on(function(id, on) bb.log('flag changed', id, on) end)\n"
+                 "bb.on_world_load(function(block) bb.log(string.format('world load 0x%08x', block)) end)\n"
+                 "local ok, err = pcall(bb.effect.apply, 2200, 'not a character')\n"
+                 "bb.log('bad chr argument raises', not ok)\n");
 
     HMODULE dll = LoadLibraryA(argv[1]);
     CHECK(dll);
@@ -176,6 +303,21 @@ int main(int argc, char **argv) {
     api.on_frame = host_on_frame;
     api.show_message = host_show_message;
     api.eboot_is_109 = host_is_109;
+    api.event_flag_get = host_flag_get;
+    api.event_flag_set = host_flag_set;
+    api.on_event_flag = host_on_flag;
+    api.on_world_load = host_on_load;
+    api.param_get = host_param_get;
+    api.param_set = host_param_set;
+    api.param_ids = host_param_ids;
+    api.player_stat_get = host_stat_get;
+    api.player_stat_set = host_stat_set;
+    api.player_position = host_position;
+    api.player_block = host_block;
+    api.chr_list = host_chr_list;
+    api.sp_effect_apply = host_effect_apply;
+    api.sp_effect_has = host_effect_has;
+    api.show_text = host_show_text;
 
     CHECK(image(&api) == 0 && g_frame);
     /* Loading: the good ones loaded, the syntax error stopped at load, in name order. */
@@ -185,7 +327,20 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "a_good: loaded") < strstr(g_log, "b_errors: loaded"));
     CHECK(strstr(g_log, "f_sandbox: sandbox: closed"));
     CHECK(!strstr(g_log, "readme"));
-    CHECK(strstr(g_log, "10 script(s) running, 1 stopped"));
+    CHECK(strstr(g_log, "11 script(s) running, 1 stopped"));
+    /* The game bindings, as the fake host saw them. */
+    CHECK(strstr(g_log, "m_game: flag 5 false flag 500 nil"));
+    CHECK(strstr(g_log, "m_game: set flag 5 true true") && g_flags[5] == 1);
+    CHECK(strstr(g_log, "m_game: attack 92 true 150 nil") && !strcmp(g_weapon_attack, "150"));
+    CHECK(strstr(g_log, "m_game: ids 3 1000 2000100 nil"));
+    CHECK(strstr(g_log, "m_game: echoes 245 true 999 nil") && g_echoes == 999);
+    CHECK(strstr(g_log, "m_game: position 1.5 -2.0 3.25 0.5 block 0x18010000"));
+    CHECK(strstr(g_log, "m_game: chr 2 true 573 false 256000 2560 7.5"));
+    CHECK(strstr(g_log, "m_game: effect true true true true false") && g_effect_target == &g_npc);
+    CHECK(strstr(g_log, "m_game: text true true") && !strcmp(g_text, "placed") && g_text_x == 0.25f &&
+          g_text_align == (BB_TEXT_RIGHT | BB_TEXT_BOTTOM));
+    CHECK(strstr(g_log, "m_game: bad chr argument raises true"));
+    CHECK(g_flag_cb && g_load_cb);
 
     for (int i = 0; i < 5; ++i) g_frame(g_frame_user);
     /* The good script ran every frame; each bad one stopped alone, with a reason. */
@@ -199,7 +354,12 @@ int main(int argc, char **argv) {
     /* The budget is per call and absolute: catching its error once doesn't buy more, the next
      * instruction outside the pcall raises again, so even this script stops. */
     CHECK(strstr(g_log, "k_recovers: stopped:") && !strstr(g_log, "k still running at frame 3"));
-    CHECK(g_banners == 9 && strstr(g_banner, "stopped"));  /* syntax, errors, loops, memory, and the 5 new */
+    CHECK(g_banners == 10 && strstr(g_banner, "stopped"));  /* 9 scripts stopped, and m_game's bb.message */
+
+    /* The host's flag and world-load callbacks reach the script's functions. */
+    g_flag_cb(77, 1, NULL);
+    g_load_cb(0x18000000, NULL);
+    CHECK(strstr(g_log, "m_game: flag changed 77 true") && strstr(g_log, "m_game: world load 0x18000000"));
 
     /* Alone, each in a fresh copy of the DLL: loops that catch the budget error. */
     g_api = api;

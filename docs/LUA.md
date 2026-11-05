@@ -14,16 +14,55 @@ state.
 The log shows each script loading (`Plugin lua: <script>: loaded`), its own lines, and why any
 stopped.
 
-## The `bb` table (so far)
+## The `bb` table
+
+Every call goes through the native plugin API (`port/docs/PLUGINS.md`), with the same rules: the
+1.09 build, and writes on the main thread. Every callback below runs on the main thread, so
+writes from callbacks are fine. A call that can't answer returns `nil` (reads) or `false` (writes).
+
+**The script itself:**
 
 | Call | What it does |
 |---|---|
 | `bb.log(...)` | One log line: the arguments as text, separated by spaces. `print` does the same. |
-| `bb.on_frame(fn)` | `fn()` once a frame, on the game's main thread. A script may register several. |
 | `bb.config(key)` | The script's option from `plugins.ini`, as text, or `nil`. The section is the script's file name: `[hello] greeting = hi` for `hello.lua`. |
 
-The game-state calls (flags, params, the player, effects, characters, messages) come next; see
-`docs/WORKPLAN.md`, Phase 4.
+**Callbacks** (a script may register several of each):
+
+| Call | What it does |
+|---|---|
+| `bb.on_frame(fn)` | `fn()` once a frame. |
+| `bb.on_world_load(fn)` | `fn(block)` when the player is placed in a map: a load or a warp. |
+| `bb.flag.on(fn)` | `fn(id, on)` for every event flag change, at the start of the next frame. Register while the script loads. |
+
+**The world's state:**
+
+| Call | What it does |
+|---|---|
+| `bb.flag.get(id)` | `true` or `false`, or `nil` while the flag's block doesn't exist. |
+| `bb.flag.set(id, on)` | Sets an event flag; `true` when written. |
+| `bb.param.get(table, id, field)` | A param field as text, or `nil`: `bb.param.get("EquipParamWeapon", 2000000, "attackBasePhysics")`. |
+| `bb.param.set(table, id, field, value)` | Writes it (a number or text, checked against the field's range); `true` when written. |
+| `bb.param.ids(table)` | The table's row ids, in order, or `nil`. |
+
+**The player and characters:**
+
+| Call | What it does |
+|---|---|
+| `bb.player.stat(name)` | `level`, `echoes`, `hp`, `vitality`... as a number, or `nil`. |
+| `bb.player.stat(name, value)` | Sets it; `true` when written. |
+| `bb.player.position()` | `x, y, z, yaw`, or `nil` with no player. |
+| `bb.player.block()` | The map block (`0x18010000` is the Hunter's Dream), or `nil`. |
+| `bb.chr.list()` | The world's characters, the player first. Each entry has `ins`, `handle`, `npc`, `model`, `hp`, `max_hp`, `team`, `type`, `player`, `x`, `y`, `z`. Use the list within the frame you got it in. |
+| `bb.effect.apply(id[, chr])` | Applies a SpEffectParam row to the player, or to a character (`entry.ins` from `bb.chr.list()`); `true` when applied. |
+| `bb.effect.has(id[, chr])` | `true` while it's on. |
+
+**Text over the game:**
+
+| Call | What it does |
+|---|---|
+| `bb.message(text[, seconds])` | A banner (3 s by default). |
+| `bb.text(text, seconds, x, y[, scale[, align]])` | A line placed at `x, y` (fractions of the window). `align` is `"left"`, `"centre"` or `"right"`, optionally with `" bottom"`. |
 
 ## What a script can't do
 

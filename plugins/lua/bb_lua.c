@@ -133,10 +133,231 @@ static int l_config(lua_State *L) {
     return 1;
 }
 
+/* --- the game: flags, params, the player, effects, characters, text --------------------------------- */
+
+/* bb.flag.get(id) -> true/false, or nil when its block doesn't exist (yet). */
+static int l_flag_get(lua_State *L) {
+    int v = 0;
+    if (g_api->event_flag_get((uint32_t)luaL_checkinteger(L, 1), &v)) lua_pushnil(L);
+    else lua_pushboolean(L, v);
+    return 1;
+}
+
+/* bb.flag.set(id, on) -> true when written. */
+static int l_flag_set(lua_State *L) {
+    luaL_checktype(L, 2, LUA_TBOOLEAN);
+    lua_pushboolean(L, !g_api->event_flag_set((uint32_t)luaL_checkinteger(L, 1), lua_toboolean(L, 2)));
+    return 1;
+}
+
+static int g_flags_watched;  /* the host's on_event_flag registered (once, for all scripts) */
+static void on_flag(uint32_t id, int value, void *user);
+static void on_world(uint32_t block, void *user);
+static int g_loads_watched;
+
+/* Appends fn to one of the script's callback lists in the registry. */
+static void add_callback(lua_State *L, const char *list, int fn) {
+    lua_getfield(L, LUA_REGISTRYINDEX, list);
+    lua_pushvalue(L, fn);
+    lua_rawseti(L, -2, (lua_Integer)lua_rawlen(L, -2) + 1);
+    lua_pop(L, 1);
+}
+
+/* bb.flag.on(fn): fn(id, on) for each flag change, at the start of a frame. Register while the
+ * script loads (the host's watcher is a hook placed then). */
+static int l_flag_on(lua_State *L) {
+    luaL_checktype(L, 1, LUA_TFUNCTION);
+    if (!g_flags_watched) {
+        if (g_api->on_event_flag(on_flag, NULL)) return luaL_error(L, "flag changes can't be watched (register while loading)");
+        g_flags_watched = 1;
+    }
+    add_callback(L, "bb_flags", 1);
+    return 0;
+}
+
+/* bb.on_world_load(fn): fn(block) when the player is placed in a map (a load, a warp). */
+static int l_on_world_load(lua_State *L) {
+    luaL_checktype(L, 1, LUA_TFUNCTION);
+    if (!g_loads_watched) {
+        if (g_api->on_world_load(on_world, NULL)) return luaL_error(L, "world loads can't be watched");
+        g_loads_watched = 1;
+    }
+    add_callback(L, "bb_loads", 1);
+    return 0;
+}
+
+/* bb.param.get(table, id, field) -> text, or nil. */
+static int l_param_get(lua_State *L) {
+    char out[256];
+    if (g_api->param_get(luaL_checkstring(L, 1), (uint32_t)luaL_checkinteger(L, 2), luaL_checkstring(L, 3), out, sizeof out))
+        lua_pushnil(L);
+    else
+        lua_pushstring(L, out);
+    return 1;
+}
+
+/* bb.param.set(table, id, field, value) -> true when written (value: a number or text). */
+static int l_param_set(lua_State *L) {
+    const char *value = luaL_tolstring(L, 4, NULL);
+    lua_pushboolean(L, !g_api->param_set(luaL_checkstring(L, 1), (uint32_t)luaL_checkinteger(L, 2), luaL_checkstring(L, 3), value));
+    return 1;
+}
+
+/* bb.param.ids(table) -> {ids...}, or nil when the table isn't loaded. */
+static int l_param_ids(lua_State *L) {
+    const char *table = luaL_checkstring(L, 1);
+    size_t count = 0;
+    if (g_api->param_ids(table, NULL, 0, &count)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    uint32_t *ids = count ? malloc(count * sizeof *ids) : NULL;
+    if (count && (!ids || g_api->param_ids(table, ids, count, &count))) {
+        free(ids);
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_createtable(L, (int)count, 0);
+    for (size_t i = 0; i < count; ++i) {
+        lua_pushinteger(L, ids[i]);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    free(ids);
+    return 1;
+}
+
+/* bb.player.stat(name) -> number or nil; bb.player.stat(name, value) -> true when written. */
+static int l_player_stat(lua_State *L) {
+    const char *name = luaL_checkstring(L, 1);
+    if (lua_gettop(L) >= 2) {
+        lua_pushboolean(L, !g_api->player_stat_set(name, (int64_t)luaL_checkinteger(L, 2)));
+        return 1;
+    }
+    int64_t v = 0;
+    if (g_api->player_stat_get(name, &v)) lua_pushnil(L);
+    else lua_pushinteger(L, (lua_Integer)v);
+    return 1;
+}
+
+/* bb.player.position() -> x, y, z, yaw, or nil with no player. */
+static int l_player_position(lua_State *L) {
+    float p[3], yaw = 0;
+    if (g_api->player_position(p, &yaw)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    for (int i = 0; i < 3; ++i) lua_pushnumber(L, p[i]);
+    lua_pushnumber(L, yaw);
+    return 4;
+}
+
+/* bb.player.block() -> the map block (0x18010000 for m24_01_00_00), or nil. */
+static int l_player_block(lua_State *L) {
+    uint32_t b = 0;
+    if (g_api->player_block(&b)) lua_pushnil(L);
+    else lua_pushinteger(L, b);
+    return 1;
+}
+
+/* A character argument: nil (or absent) for the main player, else a bb.chr.list() entry's .ins. */
+static void *chr_arg(lua_State *L, int at) {
+    if (lua_isnoneornil(L, at)) return NULL;
+    luaL_checktype(L, at, LUA_TLIGHTUSERDATA);
+    return lua_touserdata(L, at);
+}
+
+/* bb.effect.apply(id[, chr]) -> true when applied. bb.effect.has(id[, chr]) -> true/false. */
+static int l_effect_apply(lua_State *L) {
+    lua_pushboolean(L, !g_api->sp_effect_apply(chr_arg(L, 2), (int32_t)luaL_checkinteger(L, 1)));
+    return 1;
+}
+static int l_effect_has(lua_State *L) {
+    lua_pushboolean(L, g_api->sp_effect_has(chr_arg(L, 2), (int32_t)luaL_checkinteger(L, 1)) != 0);
+    return 1;
+}
+
+/* bb.chr.list() -> {{ins=, handle=, npc=, model=, hp=, max_hp=, team=, type=, player=, x=, y=, z=}, ...}
+ * or nil before the world exists. The main player first. Use within the frame. */
+static int l_chr_list(lua_State *L) {
+    size_t count = 0;
+    if (g_api->chr_list(NULL, 0, &count)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    BbChr *list = count ? calloc(count, sizeof *list) : NULL;
+    if (count && (!list || g_api->chr_list(list, count, &count))) {
+        free(list);
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_createtable(L, (int)count, 0);
+    for (size_t i = 0; i < count; ++i) {
+        const BbChr *c = &list[i];
+        lua_createtable(L, 0, 12);
+        lua_pushlightuserdata(L, c->ins);
+        lua_setfield(L, -2, "ins");
+        lua_pushinteger(L, c->handle);
+        lua_setfield(L, -2, "handle");
+        lua_pushinteger(L, c->npc_param);
+        lua_setfield(L, -2, "npc");
+        lua_pushinteger(L, c->model);
+        lua_setfield(L, -2, "model");
+        lua_pushinteger(L, c->hp);
+        lua_setfield(L, -2, "hp");
+        lua_pushinteger(L, c->max_hp);
+        lua_setfield(L, -2, "max_hp");
+        lua_pushinteger(L, c->team_type);
+        lua_setfield(L, -2, "team");
+        lua_pushinteger(L, c->chr_type);
+        lua_setfield(L, -2, "type");
+        lua_pushboolean(L, c->is_player);
+        lua_setfield(L, -2, "player");
+        lua_pushnumber(L, c->pos[0]);
+        lua_setfield(L, -2, "x");
+        lua_pushnumber(L, c->pos[1]);
+        lua_setfield(L, -2, "y");
+        lua_pushnumber(L, c->pos[2]);
+        lua_setfield(L, -2, "z");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    free(list);
+    return 1;
+}
+
+/* bb.message(text[, seconds]) -> true when shown: a banner over the game (default 3 s). */
+static int l_message(lua_State *L) {
+    lua_pushboolean(L, !g_api->show_message(luaL_checkstring(L, 1), (float)luaL_optnumber(L, 2, 3.0)));
+    return 1;
+}
+
+/* bb.text(text, seconds, x, y[, scale[, align]]) -> true when shown. align: "left" (default),
+ * "centre"/"center", "right", each optionally with " bottom" (the box rises from the point). */
+static int l_text(lua_State *L) {
+    const char *text = luaL_checkstring(L, 1);
+    const float seconds = (float)luaL_checknumber(L, 2), x = (float)luaL_checknumber(L, 3), y = (float)luaL_checknumber(L, 4);
+    const float scale = (float)luaL_optnumber(L, 5, 1.0);
+    const char *align = luaL_optstring(L, 6, "left");
+    uint32_t a = BB_TEXT_LEFT;
+    if (strstr(align, "cent")) a = BB_TEXT_CENTRE;
+    else if (strstr(align, "right")) a = BB_TEXT_RIGHT;
+    if (strstr(align, "bottom")) a |= BB_TEXT_BOTTOM;
+    lua_pushboolean(L, !g_api->show_text(text, seconds, x, y, scale, a));
+    return 1;
+}
+
+static const luaL_Reg FLAG[] = {{"get", l_flag_get}, {"set", l_flag_set}, {"on", l_flag_on}, {NULL, NULL}};
+static const luaL_Reg PARAM[] = {{"get", l_param_get}, {"set", l_param_set}, {"ids", l_param_ids}, {NULL, NULL}};
+static const luaL_Reg PLAYER[] = {{"stat", l_player_stat}, {"position", l_player_position}, {"block", l_player_block}, {NULL, NULL}};
+static const luaL_Reg EFFECT[] = {{"apply", l_effect_apply}, {"has", l_effect_has}, {NULL, NULL}};
+static const luaL_Reg CHR[] = {{"list", l_chr_list}, {NULL, NULL}};
+
 static const luaL_Reg BB[] = {
     {"log", l_log},
     {"on_frame", l_on_frame},
     {"config", l_config},
+    {"on_world_load", l_on_world_load},
+    {"message", l_message},
+    {"text", l_text},
     {NULL, NULL},
 };
 
@@ -174,11 +395,23 @@ static void open_sandbox(lua_State *L) {
     lua_pop(L, 1);
     /* bb, and print as bb.log. */
     luaL_newlib(L, BB);
+    static const struct {
+        const char *name;
+        const luaL_Reg *fns;
+    } groups[] = {{"flag", FLAG}, {"param", PARAM}, {"player", PLAYER}, {"effect", EFFECT}, {"chr", CHR}};
+    for (size_t i = 0; i < sizeof groups / sizeof *groups; ++i) {
+        lua_newtable(L);
+        luaL_setfuncs(L, groups[i].fns, 0);
+        lua_setfield(L, -2, groups[i].name);
+    }
     lua_setglobal(L, "bb");
     lua_pushcfunction(L, l_log);
     lua_setglobal(L, "print");
-    lua_newtable(L);
-    lua_setfield(L, LUA_REGISTRYINDEX, "bb_frames");
+    static const char *const lists[] = {"bb_frames", "bb_flags", "bb_loads", NULL};
+    for (const char *const *l = lists; *l; ++l) {
+        lua_newtable(L);
+        lua_setfield(L, LUA_REGISTRYINDEX, *l);
+    }
 }
 
 /* Stops a script for good: the reason to the log and on screen. */
@@ -288,19 +521,49 @@ static void load_folder(const char *folder) {
 
 /* --- the host's callbacks ----------------------------------------------------------------------- */
 
-static void on_frame(void *user) {
-    (void)user;
+/* Each running script's callbacks in one of its lists, each called with what push() pushes. */
+static void dispatch(const char *list, void (*push)(lua_State *L, const void *what), const void *what, int nargs) {
     for (int i = 0; i < g_count; ++i) {
         Script *s = &g_scripts[i];
         if (!s->on) continue;
-        lua_getfield(s->L, LUA_REGISTRYINDEX, "bb_frames");
+        lua_getfield(s->L, LUA_REGISTRYINDEX, list);
         const lua_Integer n = (lua_Integer)lua_rawlen(s->L, -1);
         for (lua_Integer k = 1; k <= n && s->on; ++k) {
             lua_rawgeti(s->L, -1, k);
-            call(s, 0);
+            if (push) push(s->L, what);
+            call(s, nargs);
         }
         lua_settop(s->L, 0);
     }
+}
+
+typedef struct {
+    uint32_t id;
+    int value;
+} FlagChange;
+
+static void push_flag(lua_State *L, const void *what) {
+    const FlagChange *c = what;
+    lua_pushinteger(L, c->id);
+    lua_pushboolean(L, c->value);
+}
+
+static void push_block(lua_State *L, const void *what) { lua_pushinteger(L, *(const uint32_t *)what); }
+
+static void on_flag(uint32_t id, int value, void *user) {
+    (void)user;
+    const FlagChange c = {id, value};
+    dispatch("bb_flags", push_flag, &c, 2);
+}
+
+static void on_world(uint32_t block, void *user) {
+    (void)user;
+    dispatch("bb_loads", push_block, &block, 1);
+}
+
+static void on_frame(void *user) {
+    (void)user;
+    dispatch("bb_frames", NULL, NULL, 0);
 }
 
 BB_PLUGIN_EXPORT const BbPluginInfo bb_plugin_info = {
