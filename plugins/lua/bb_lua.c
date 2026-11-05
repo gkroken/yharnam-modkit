@@ -369,6 +369,33 @@ static int l_chr_list(lua_State *L) {
     return 1;
 }
 
+static int g_loading_scripts;  /* 1 while bb_plugin_image loads the scripts: the image phase */
+
+/* bb.replace_text(address, text) -> the references moved (0: nothing names that string). The
+ * game's UTF-16 string at a Binary Ninja address shows `text` (UTF-8) instead, wherever the code
+ * and data name it. Only while the script loads (its top level): the host rewrites the code
+ * before the game runs. The first replacement of a string stays. */
+static int l_replace_text(lua_State *L) {
+    const lua_Integer at = luaL_checkinteger(L, 1);
+    size_t len = 0;
+    const char *text = luaL_checklstring(L, 2, &len);
+    luaL_argcheck(L, at >= 0x400000, 1, "a Binary Ninja address of the 1.09 image");
+    luaL_argcheck(L, len > 0 && len <= 4096 * 3 && strlen(text) == len, 2, "text: 1 to 4096 characters, no NUL");
+    if (!g_loading_scripts) return luaL_error(L, "bb.replace_text works only while the script loads (its top level)");
+    const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, (int)len, NULL, 0);
+    luaL_argcheck(L, n > 0 && n <= 4096, 2, "text: valid UTF-8, up to 4096 characters");
+    wchar_t *wide = malloc(((size_t)n + 1) * sizeof *wide);
+    if (!wide) return luaL_error(L, "out of memory");
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, (int)len, wide, n);
+    wide[n] = 0;
+    const BbText item = {(uint64_t)at, (const uint16_t *)wide};
+    const int moved = g_api->replace_text(&item, 1);
+    free(wide);  /* the host keeps its own copy */
+    if (moved < 0) return luaL_error(L, "the host refused bb.replace_text (not the 1.09 game, or too late)");
+    lua_pushinteger(L, moved);
+    return 1;
+}
+
 /* bb.loading() -> true while a loading screen is up (a load, a warp, a death). */
 static int l_loading(lua_State *L) {
     lua_pushboolean(L, g_api->loading_screen() != 0);
@@ -419,6 +446,7 @@ static const luaL_Reg BB[] = {
     {"message", l_message},
     {"text", l_text},
     {"loading", l_loading},
+    {"replace_text", l_replace_text},
     {NULL, NULL},
 };
 
@@ -1160,8 +1188,10 @@ BB_PLUGIN_EXPORT int bb_plugin_image(const BbHostApi *api) {
     }
     g_online = env_is("BB_ONLINE", "1") && !env_is("BB_COOP", "1");
     if (g_online) api->log("online play: scripts run, but their calls that change the game do nothing");
+    g_loading_scripts = 1;
     load_folder(api->plugin_dir("lua"), "");
     load_mods(api->mods_dir ? api->mods_dir() : NULL);
+    g_loading_scripts = 0;
     int on = 0;
     for (int i = 0; i < g_count; ++i) on += g_scripts[i].on;
     api->log("%d script(s) running, %d stopped", on, g_count - on);

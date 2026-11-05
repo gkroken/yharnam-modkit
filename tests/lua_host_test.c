@@ -178,6 +178,19 @@ static int host_input(BbInput *out) {
     *out = g_input_now;
     return 0;
 }
+/* The last replace_text the fake host got. */
+static uint64_t g_text_at;
+static uint16_t g_text_utf16[64];
+static int g_replace_calls;
+static int host_replace_text(const BbText *texts, size_t count) {
+    ++g_replace_calls;
+    if (count != 1) return -1;
+    g_text_at = texts[0].bn_addr;
+    size_t i = 0;
+    for (; texts[0].text[i] && i < 63; ++i) g_text_utf16[i] = texts[0].text[i];
+    g_text_utf16[i] = 0;
+    return 2;
+}
 static int g_loading_now;
 static int host_loading(void) { return g_loading_now; }
 
@@ -451,6 +464,7 @@ int main(int argc, char **argv) {
     api.input = host_input;
     api.input_take = host_input_take;
     api.loading_screen = host_loading;
+    api.replace_text = host_replace_text;
 
     CHECK(image(&api) == 0 && g_frame);
     /* Loading: the good ones loaded, the syntax error stopped at load, in name order. */
@@ -707,6 +721,21 @@ int main(int argc, char **argv) {
         g_frame(g_frame_user);
         g_loading_now = 0;
         CHECK(strstr(g_log, "loading: loading false") && strstr(g_log, "loading: loading true"));
+
+        /* bb.replace_text: while loading, UTF-8 to UTF-16 to the host; later, an error. */
+        g_replace_calls = 0;
+        CHECK(load_alone(argv[1], "text",
+                         "bb.log('moved', bb.replace_text(0x4d686cc, 'maptpf:/%s/%s_9998.tpf'))\n"
+                         "bb.log('bad', (pcall(bb.replace_text, 0x10, 'x')), (pcall(bb.replace_text, 0x4d686cc, '')),\n"
+                         "       (pcall(bb.replace_text, 0x4d686cc, 'a\\0b')), (pcall(bb.replace_text, 0x4d686cc, '\\xff\\xfe')))\n"
+                         "bb.replace_text(0x500000, 'Bl\\u{f8}d')\n"
+                         "bb.on_frame(function() bb.log('later', pcall(bb.replace_text, 0x4d686cc, 'x')) end)\n"));
+        CHECK(strstr(g_log, "text: moved 2") && strstr(g_log, "text: bad false false false false"));
+        CHECK(g_replace_calls == 2 && g_text_at == 0x500000 && g_text_utf16[0] == 'B' && g_text_utf16[2] == 0xf8 &&
+              g_text_utf16[3] == 'd' && g_text_utf16[4] == 0);  /* UTF-16 */
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "text: later false") && strstr(g_log, "only while the script loads") && g_replace_calls == 2);
 
         /* Other names: kp0 (98), f12 (69), lshift (225). */
         g_input_now.key[98] = g_input_now.key[69] = g_input_now.key[225] = 1;
