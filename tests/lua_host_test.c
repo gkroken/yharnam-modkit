@@ -29,6 +29,7 @@ static int g_banners;
 static void (*g_frame)(void *);
 static void *g_frame_user;
 static char g_dir[MAX_PATH];
+static BbHostApi g_api;
 
 static void host_log(const char *fmt, ...) {
     char line[1024];
@@ -66,6 +67,33 @@ static int count(const char *needle) {
     int n = 0;
     for (const char *p = g_log; (p = strstr(p, needle)) != NULL; p += strlen(needle)) ++n;
     return n;
+}
+
+/* One script alone in a fresh copy of the DLL (its own globals, its own Lua history): whether it
+ * was stopped within its first frame. Run alone, the reviewer's pcall loop hangs a build without
+ * the sticky budget; in the mixed run above it happened not to (tool-76b48eb-F1). */
+static int stopped_alone(const char *dll, const char *tag, const char *text) {
+    char copy[MAX_PATH], folder[MAX_PATH], path[MAX_PATH];
+    snprintf(copy, sizeof copy, "%s\\bb_lua_%s.dll", g_dir, tag);
+    if (!CopyFileA(dll, copy, FALSE)) return 0;
+    snprintf(g_dir + strlen(g_dir), MAX_PATH - strlen(g_dir), "\\%s", tag);  /* plugin_dir now points here */
+    CreateDirectoryA(g_dir, NULL);
+    snprintf(folder, sizeof folder, "%s\\lua", g_dir);
+    CreateDirectoryA(folder, NULL);
+    snprintf(path, sizeof path, "%s\\%s.lua", folder, tag);
+    FILE *f = fopen(path, "wb");
+    fputs(text, f);
+    fclose(f);
+    g_log[0] = 0;
+    g_frame = NULL;
+    HMODULE m = LoadLibraryA(copy);
+    int (*image)(const BbHostApi *) = m ? (int (*)(const BbHostApi *))(void *)GetProcAddress(m, "bb_plugin_image") : NULL;
+    if (!image || image(&g_api) || !g_frame) return 0;
+    g_frame(g_frame_user);  /* hangs (the test runner's timeout) if the script isn't stopped */
+    char want[96];
+    snprintf(want, sizeof want, "%s: stopped: took too long", tag);
+    *strrchr(g_dir, '\\') = 0;  /* back to the test's folder */
+    return strstr(g_log, want) != NULL;
 }
 
 static void write_script(const char *name, const char *text) {
@@ -173,7 +201,14 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "k_recovers: stopped:") && !strstr(g_log, "k still running at frame 3"));
     CHECK(g_banners == 9 && strstr(g_banner, "stopped"));  /* syntax, errors, loops, memory, and the 5 new */
 
-    /* No scripts: the plugin unloads itself (returns nonzero). */
+    /* Alone, each in a fresh copy of the DLL: loops that catch the budget error. */
+    g_api = api;
+    CHECK(stopped_alone(argv[1], "pcall_loop", "bb.on_frame(function() while true do pcall(function() while true do end end) end end)\n"));
+    CHECK(stopped_alone(argv[1], "xpcall_nested",
+                        "bb.on_frame(function()\n"
+                        "  while true do xpcall(function() pcall(function() while true do end end) end, function(e) return e end) end\n"
+                        "end)\n"));
+
     printf("lua host: %d checks passed\n", checks);
     return 0;
 }
