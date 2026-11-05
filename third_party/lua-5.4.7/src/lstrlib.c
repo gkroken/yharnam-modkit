@@ -361,6 +361,7 @@ typedef struct MatchState {
   const char *p_end;  /* end ('\0') of pattern */
   lua_State *L;
   int matchdepth;  /* control for recursive depth (to avoid C stack overflow) */
+  unsigned long steps;  /* bb_lua: matcher steps, charged to the script's budget */
   unsigned char level;  /* total number of captures (finished or unfinished) */
   struct {
     const char *init;
@@ -371,6 +372,11 @@ typedef struct MatchState {
 
 /* recursive function */
 static const char *match (MatchState *ms, const char *s, const char *p);
+
+/* bb_lua (plugins/lua/bb_lua.c): every 4096 matcher steps, charged to the running script's
+** instruction budget; raises when it is spent. Patterns run in C, where the count hook can't
+** reach, so a backtracking pattern would otherwise run without bound. */
+void lua_pattern_tick (lua_State *L);
 
 
 /* maximum recursion depth for 'match' */
@@ -570,6 +576,8 @@ static const char *match_capture (MatchState *ms, const char *s, int l) {
 static const char *match (MatchState *ms, const char *s, const char *p) {
   if (l_unlikely(ms->matchdepth-- == 0))
     luaL_error(ms->L, "pattern too complex");
+  if (l_unlikely((++ms->steps & 0xfff) == 0))  /* bb_lua */
+    lua_pattern_tick(ms->L);
   init: /* using goto to optimize tail recursion */
   if (p != ms->p_end) {  /* end of pattern? */
     switch (*p) {
@@ -758,6 +766,7 @@ static void prepstate (MatchState *ms, lua_State *L,
                        const char *s, size_t ls, const char *p, size_t lp) {
   ms->L = L;
   ms->matchdepth = MAXCCALLS;
+  ms->steps = 0;  /* bb_lua */
   ms->src_init = s;
   ms->src_end = s + ls;
   ms->p_end = p + lp;

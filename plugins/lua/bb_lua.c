@@ -29,14 +29,18 @@
 #include <windows.h>
 
 enum { MAX_SCRIPTS = 64, NAME_LEN = 64 };
+static lua_Hook count_hook_fn(void);
 static const long long BUDGET = 20000000;            /* VM instructions per call into a script */
 static const size_t MEMORY_CAP = 64u * 1024 * 1024;  /* bytes per script */
+
+enum { HOOK_EVERY = 10000 };
 
 typedef struct {
     char name[NAME_LEN];  /* the file name without .lua: its log prefix and plugins.ini section */
     lua_State *L;
     size_t memory;
     long long left;       /* the current call's budget */
+    int spent;            /* the budget ran out in this call: every instruction raises until it ends */
     int on;
 } Script;
 
@@ -66,12 +70,30 @@ static Script *script_of(lua_State *L) {
     return ud;
 }
 
+/* Once the budget is spent the hook fires on every instruction, here and in the script's main
+ * thread, and raises each time: a pcall (or a coroutine) may catch one error, but the next
+ * instruction outside it raises again, so no loop survives. tool-711f289-F1. */
+static void spend(lua_State *L, Script *s, long long amount) {
+    s->left -= amount;
+    if (s->left > 0) return;
+    if (!s->spent) {
+        s->spent = 1;
+        lua_sethook(s->L, count_hook_fn(), LUA_MASKCOUNT, 1);
+        if (L != s->L) lua_sethook(L, count_hook_fn(), LUA_MASKCOUNT, 1);
+    }
+    luaL_error(L, "took too long (over %I instructions in one call)", (lua_Integer)BUDGET);
+}
+
 static void count_hook(lua_State *L, lua_Debug *ar) {
     (void)ar;
     Script *s = script_of(L);
-    s->left -= 10000;
-    if (s->left <= 0) luaL_error(L, "took too long (over %I instructions in one call)", (lua_Integer)BUDGET);
+    spend(L, s, s->spent ? 1 : HOOK_EVERY);
 }
+
+static lua_Hook count_hook_fn(void) { return count_hook; }
+
+/* Lua's pattern matcher (the bb_lua change in lstrlib.c): its steps count against the budget too. */
+void lua_pattern_tick(lua_State *L) { spend(L, script_of(L), 4096); }
 
 /* --- the bb table --------------------------------------------------------------------------------- */
 
@@ -171,6 +193,10 @@ static void stop(Script *s, const char *why) {
 /* Calls the function on top of the stack with no arguments, within the budget. 0 on success. */
 static int call(Script *s, int nargs) {
     s->left = BUDGET;
+    if (s->spent) {  /* defensive: a spent call always ends in an error, which stops the script */
+        s->spent = 0;
+        lua_sethook(s->L, count_hook, LUA_MASKCOUNT, HOOK_EVERY);
+    }
     if (lua_pcall(s->L, nargs, 0, 0) == LUA_OK) return 0;
     const char *err = lua_tostring(s->L, -1);
     char why[256];
@@ -217,7 +243,7 @@ static void load_script(const wchar_t *path, const wchar_t *file) {
     s->on = 1;
     ++g_count;
     open_sandbox(s->L);
-    lua_sethook(s->L, count_hook, LUA_MASKCOUNT, 10000);
+    lua_sethook(s->L, count_hook, LUA_MASKCOUNT, HOOK_EVERY);
     char chunk[NAME_LEN + 2];
     snprintf(chunk, sizeof chunk, "@%s", s->name);
     /* Text only ("t"): bytecode could break the VM's own checks. */

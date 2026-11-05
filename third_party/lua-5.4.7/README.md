@@ -7,5 +7,10 @@ The Lua interpreter's library sources, unchanged, for the `bb_lua` plugin (`plug
   https://www.lua.org/ftp/ and checked on download.
 - **Kept:** `src/*.c` and `src/*.h`, without `lua.c` and `luac.c` (the standalone interpreter
   and compiler, which a plugin doesn't need).
+- **One change, marked `bb_lua`:** `src/lstrlib.c` counts the pattern matcher's steps and
+  calls `lua_pattern_tick` every 4096 of them, which `plugins/lua/bb_lua.c` defines. Patterns
+  run in C, where Lua's instruction-count hook can't reach, so without it one backtracking
+  pattern could run forever on the game's main thread (tool-711f289-F1). Everything else is
+  as lua.org ships it.
 - **License:** MIT (`LICENSE`, the notice at the end of `lua.h`). It is compatible with this
   project's GPL-3.0-or-later.

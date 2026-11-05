@@ -99,6 +99,27 @@ int main(int argc, char **argv) {
     write_script("d_memory.lua",
                  "bb.on_frame(function() local t = {} for i = 1, 1e9 do t[i] = string.rep('x', 4096) .. i end end)\n");
     write_script("e_syntax.lua", "bb.on_frame(function( end\n");
+    /* tool-711f289-F1: an endless loop that catches the budget error, a coroutine doing the same,
+     * and a backtracking pattern (C(59,29) steps), which runs in C where the hook can't reach. */
+    write_script("g_pcall_loop.lua", "bb.on_frame(function() while true do pcall(function() while true do end end) end end)\n");
+    write_script("h_coroutine_loop.lua",
+                 "bb.on_frame(function()\n"
+                 "  while true do coroutine.resume(coroutine.create(function() while true do end end)) end\n"
+                 "end)\n");
+    write_script("i_pattern.lua",
+                 "bb.on_frame(function() local s = ('a'):rep(30); s:find(('a*'):rep(30) .. 'b') end)\n");
+    write_script("j_pattern_pcall.lua",
+                 "bb.on_frame(function()\n"
+                 "  local s = ('a'):rep(30)\n"
+                 "  while true do pcall(string.find, s, ('a*'):rep(30) .. 'b') end\n"
+                 "end)\n");
+    write_script("k_recovers.lua",
+                 "local n = 0\n"
+                 "bb.on_frame(function()\n"
+                 "  n = n + 1\n"
+                 "  if n == 1 then pcall(function() while true do end end) end  -- caught once, then the call ends\n"
+                 "  if n == 3 then bb.log('k still running at frame 3') end\n"
+                 "end)\n");
     write_script("f_sandbox.lua",
                  "local reached = {}\n"
                  "for _, name in ipairs({'io', 'require', 'load', 'loadfile', 'dofile', 'debug', 'package'}) do\n"
@@ -136,7 +157,7 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "a_good: loaded") < strstr(g_log, "b_errors: loaded"));
     CHECK(strstr(g_log, "f_sandbox: sandbox: closed"));
     CHECK(!strstr(g_log, "readme"));
-    CHECK(strstr(g_log, "5 script(s) running, 1 stopped"));
+    CHECK(strstr(g_log, "10 script(s) running, 1 stopped"));
 
     for (int i = 0; i < 5; ++i) g_frame(g_frame_user);
     /* The good script ran every frame; each bad one stopped alone, with a reason. */
@@ -145,7 +166,12 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "c_loops: stopped:") && strstr(g_log, "took too long"));
     CHECK(strstr(g_log, "d_memory: stopped:") && strstr(g_log, "not enough memory"));
     CHECK(count("b_errors: stopped:") == 1);  /* stopped once, not every frame */
-    CHECK(g_banners == 4 && strstr(g_banner, "stopped"));  /* syntax, errors, loops, memory */
+    CHECK(strstr(g_log, "g_pcall_loop: stopped:") && strstr(g_log, "h_coroutine_loop: stopped:"));
+    CHECK(strstr(g_log, "i_pattern: stopped:") && strstr(g_log, "j_pattern_pcall: stopped:"));
+    /* The budget is per call and absolute: catching its error once doesn't buy more, the next
+     * instruction outside the pcall raises again, so even this script stops. */
+    CHECK(strstr(g_log, "k_recovers: stopped:") && !strstr(g_log, "k still running at frame 3"));
+    CHECK(g_banners == 9 && strstr(g_banner, "stopped"));  /* syntax, errors, loops, memory, and the 5 new */
 
     /* No scripts: the plugin unloads itself (returns nonzero). */
     printf("lua host: %d checks passed\n", checks);
