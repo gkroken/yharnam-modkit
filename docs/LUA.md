@@ -70,7 +70,7 @@ writes from callbacks are fine. A call that can't answer returns `nil` (reads) o
 | `bb.player.stat(name, value)` | Sets it; `true` when written. |
 | `bb.player.position()` | `x, y, z, yaw`, or `nil` with no player. |
 | `bb.loading()` | `true` while a loading screen is up: a load, a warp, a death. `bb.on_world_load` runs while it is still up. |
-| `bb.player.block()` | The map block (`0x18010000` is the Hunter's Dream), or `nil`. |
+| `bb.player.block()` | The map block (`0x18010000` is m24_01, Central Yharnam), or `nil`. |
 | `bb.chr.list()` | The world's characters, the player first. Each entry has `ins`, `handle`, `npc`, `model`, `hp`, `max_hp`, `team`, `type`, `player`, `x`, `y`, `z`. Use the list within the frame you got it in. |
 | `bb.effect.apply(id[, chr])` | Applies a SpEffectParam row to the player, or to a character (`entry.ins` from `bb.chr.list()`); `true` when applied. |
 | `bb.effect.has(id[, chr])` | `true` while it's on. |
@@ -101,6 +101,8 @@ lines can rebind the game's keys.
 
 ## What a script can't do
 
+- **Warp the player** (yet). The host's warps are for native plugins the player turned on, flagged
+  as changing the game. Lua scripts aren't, so far.
 - **Change the game in online play.** With `BB_ONLINE=1` (not co-op), `bb.flag.set`,
   `bb.param.set`, `bb.player.stat(name, value)` and `bb.effect.apply` do nothing and return
   false; the log says so once per script. Reading, watching and text still work. This matches

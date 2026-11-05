@@ -156,7 +156,13 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
 - [ ] Player:
   - [x] `player_stat_get` and `player_stat_set` (e230c49), and `player_position` and
         `player_block`, shown in the world (a87a447).
-  - [ ] `player_warp` and `lamp_warp`.
+  - [x] `player_warp` and `lamp_warp`: bbhost's routines (port a46c5c9). Only for a plugin
+        flagged opt-in and gameplay (the player turned it on; online leaves it out). In the
+        world: a 3 m move in Central Yharnam, and a lamp travel with its full load.
+  - [ ] Warps for Lua scripts. Open design: bb_lua isn't flagged, so the host refuses it.
+        Choices: a second, opt-in gameplay build of the Lua host for scripts that warp, or a
+        per-script opt-in in plugins.ini that bb_lua checks. Whichever, online play must refuse
+        them too (port-a46c5c9-N1).
   - [x] `loading_screen()`: bbhost's reading (port 7383ee0); in Lua as `bb.loading()`. A
         picture while it read 1 shows the loading screen.
   - [x] `on_world_load` (port b148dcb).
@@ -184,7 +190,7 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
 - `weapon_tweak`: EquipParamWeapon row 2000000's `attackBasePhysics` went 92 -> 150 at start,
   and a probe read 150 back in the world.
 - Since then: `show_message`/`show_text` (port b148dcb), input and `input_take` (c850d52 to
-  ad77c97), and `loading_screen` (7383ee0). Still open: the warps and `replace_text`.
+  ad77c97), and `loading_screen` (7383ee0), and the warps (a46c5c9). Still open: `replace_text`.
 
 ## Phase 4: Lua scripting (`bb_lua.dll`)
 
