@@ -178,6 +178,9 @@ static int host_input(BbInput *out) {
     *out = g_input_now;
     return 0;
 }
+static int g_loading_now;
+static int host_loading(void) { return g_loading_now; }
+
 /* The last input_take the fake host got. */
 static uint16_t g_take_codes[512];
 static size_t g_take_n;
@@ -447,6 +450,7 @@ int main(int argc, char **argv) {
     api.mods_dir = host_mods_dir;
     api.input = host_input;
     api.input_take = host_input_take;
+    api.loading_screen = host_loading;
 
     CHECK(image(&api) == 0 && g_frame);
     /* Loading: the good ones loaded, the syntax error stopped at load, in name order. */
@@ -694,6 +698,15 @@ int main(int argc, char **argv) {
         CHECK(g_take_n == 2 && g_take_codes[0] == 10 && g_take_codes[1] == 63 && g_take_buttons == 2 && g_take_wheel == 0);
         g_frame(g_frame_user);  /* a gives everything back */
         CHECK(strstr(g_log, "take: given back true") && g_take_calls == 4 && g_take_n == 0 && g_take_buttons == 0);
+
+        /* bb.loading: the host's loading_screen, as a boolean. */
+        CHECK(load_alone(argv[1], "loading", "bb.on_frame(function() bb.log('loading', bb.loading()) end)\n"));
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        g_loading_now = 1;
+        g_frame(g_frame_user);
+        g_loading_now = 0;
+        CHECK(strstr(g_log, "loading: loading false") && strstr(g_log, "loading: loading true"));
 
         /* Other names: kp0 (98), f12 (69), lshift (225). */
         g_input_now.key[98] = g_input_now.key[69] = g_input_now.key[225] = 1;

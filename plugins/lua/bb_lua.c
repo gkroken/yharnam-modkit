@@ -369,6 +369,12 @@ static int l_chr_list(lua_State *L) {
     return 1;
 }
 
+/* bb.loading() -> true while a loading screen is up (a load, a warp, a death). */
+static int l_loading(lua_State *L) {
+    lua_pushboolean(L, g_api->loading_screen() != 0);
+    return 1;
+}
+
 /* bb.message(text[, seconds]) -> true when shown: a banner over the game (default 3 s). */
 static int l_message(lua_State *L) {
     lua_pushboolean(L, !g_api->show_message(luaL_checkstring(L, 1), (float)luaL_optnumber(L, 2, 3.0)));
@@ -412,6 +418,7 @@ static const luaL_Reg BB[] = {
     {"on_world_load", l_on_world_load},
     {"message", l_message},
     {"text", l_text},
+    {"loading", l_loading},
     {NULL, NULL},
 };
 

@@ -12,12 +12,12 @@
 # - -Keys: once in the world, each key (F1..F12, A..Z) is pressed and released in turn, a second
 #   apart, but only while the game's window is in front (never into anyone else's window). Each is
 #   held -KeyHoldMs (120); 0 is a tap shorter than a frame.
-# - -Shot <file.png>: a picture of the game's window two seconds after the keys (or after reaching
-#   the world), taken from the screen, so only while the game is in front.
+# - -Shot <file.png>: a picture of the game's window -ShotAfter seconds (2) after the keys (or after
+#   reaching the world), taken from the screen, so only while the game is in front.
 # - The save is copied first and put back afterwards, so a run leaves it as it was.
 # - The dump: BB_GAME_DIR, else C:/games/Bloodborne/game. Python: -Python, else the per-user
 #   python.org 3.13.
-param([string[]]$Plugins = @(), [int]$Seconds = 40, [string[]]$Keys = @(), [int]$KeyHoldMs = 120, [string]$Shot = '', [string]$Log = "$env:TEMP\bb-game-world.log",
+param([string[]]$Plugins = @(), [int]$Seconds = 40, [string[]]$Keys = @(), [int]$KeyHoldMs = 120, [string]$Shot = '', [int]$ShotAfter = 2, [string]$Log = "$env:TEMP\bb-game-world.log",
       [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe")
 $ErrorActionPreference = 'Stop'
 $root = Join-Path (Split-Path -Parent $PSScriptRoot) 'port'
@@ -105,13 +105,13 @@ try {
         if (-not (Click $handle $x $y)) { 'the game is not in front: not clicking, trying again'; Start-Sleep 3; continue }
         Start-Sleep 2
         [void](Click $handle $x $y)
-        for ($w = 0; $w -lt 15 -and -not $world; $w++) { Start-Sleep 2; $world = Select-String -Path $Log -Pattern 'IN_WORLD' -Quiet }
+        for ($w = 0; $w -lt 60 -and -not $world; $w++) { Start-Sleep -Milliseconds 500; $world = Select-String -Path $Log -Pattern 'IN_WORLD' -Quiet }
     }
     if ($world) {
         'world reached'
         if ($Keys) { Start-Sleep 3; foreach ($k in $Keys) { Press $handle $k; Start-Sleep 1 } }
         if ($Shot) {
-            Start-Sleep 2
+            Start-Sleep $ShotAfter
             if ([GW]::GetForegroundWindow() -ne $handle) { 'no picture: the game is not in front' } else {
                 Add-Type -AssemblyName System.Drawing
                 $r = New-Object GW+RECT; [void][GW]::GetWindowRect($handle, [ref]$r)

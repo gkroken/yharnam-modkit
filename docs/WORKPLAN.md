@@ -157,7 +157,8 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
   - [x] `player_stat_get` and `player_stat_set` (e230c49), and `player_position` and
         `player_block`, shown in the world (a87a447).
   - [ ] `player_warp` and `lamp_warp`.
-  - [ ] `loading_screen()`.
+  - [x] `loading_screen()`: bbhost's reading (port 7383ee0); in Lua as `bb.loading()`. A
+        picture while it read 1 shows the loading screen.
   - [x] `on_world_load` (port b148dcb).
 - [x] Characters: `chr_list` (main thread), `sp_effect_apply` (a SpEffectParam row, a character
       that `chr_list` returns), `sp_effect_has`. Port a87a447, ebb8113.
@@ -182,8 +183,8 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
   2200 (`sp_effect_apply` = 0), and the player then had it (`sp_effect_has` = 1).
 - `weapon_tweak`: EquipParamWeapon row 2000000's `attackBasePhysics` went 92 -> 150 at start,
   and a probe read 150 back in the world.
-- The UI items above (`show_message`/`show_text` are in, port b148dcb) and the warps,
-  `loading_screen` and input are still open.
+- Since then: `show_message`/`show_text` (port b148dcb), input and `input_take` (c850d52 to
+  ad77c97), and `loading_screen` (7383ee0). Still open: the warps and `replace_text`.
 
 ## Phase 4: Lua scripting (`bb_lua.dll`)
 
