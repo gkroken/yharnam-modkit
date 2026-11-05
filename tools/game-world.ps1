@@ -22,6 +22,7 @@ foreach ($p in $Plugins) { if (-not (Test-Path $p)) { throw "no plugin at $p" } 
 $backup = Join-Path $env:TEMP "bb-game-world-save-$PID"
 $copied = @()
 $kept = @()
+$backedUp = $false
 Add-Type @'
 using System; using System.Runtime.InteropServices;
 public static class GW { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
@@ -46,7 +47,15 @@ function Click($handle, $x, $y) {
 }
 $cursor = New-Object GW+POINT; [void][GW]::GetCursorPos([ref]$cursor)
 try {
-    Copy-Item -Recurse "$root\user\savedata" $backup
+    # Restore only from a backup that finished: a copy failing partway (a locked file, a full disk)
+    # throws with part of the save in $backup, which must never replace the real one.
+    try {
+        Copy-Item -Recurse "$root\user\savedata" $backup
+    } catch {
+        Remove-Item -Recurse -Force $backup -ErrorAction SilentlyContinue
+        throw "the save could not be backed up ($_); nothing was changed"
+    }
+    $backedUp = $true
     "save backed up to $backup (it is put back at the end; if this run is cut short, copy it back)"
     New-Item -ItemType Directory -Force "$root\plugins" | Out-Null
     # A plugin of the same name already in port\plugins (the developer's own) is kept aside and put back.
@@ -85,10 +94,19 @@ try {
     [void][GW]::SetCursorPos($cursor.X, $cursor.Y)
     Get-Process bb-probe -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$root*" } | Stop-Process -Force
     Start-Sleep 2
-    if (Test-Path $backup) {  # only what this run took is put back
-        Remove-Item -Recurse -Force "$root\user\savedata" -ErrorAction SilentlyContinue
-        Copy-Item -Recurse $backup "$root\user\savedata"
-        Remove-Item -Recurse -Force $backup
+    if ($backedUp) {
+        # The game may hold a file for a moment after it is killed: retry, and copy back only into
+        # a savedata that is really gone (Copy-Item into an existing folder would nest the backup).
+        for ($i = 0; $i -lt 10 -and (Test-Path "$root\user\savedata"); $i++) {
+            Remove-Item -Recurse -Force "$root\user\savedata" -ErrorAction SilentlyContinue
+            if (Test-Path "$root\user\savedata") { Start-Sleep 1 }
+        }
+        if (Test-Path "$root\user\savedata") {
+            "could NOT put the save back: port\user\savedata is still there. The backup is kept at $backup"
+        } else {
+            Copy-Item -Recurse $backup "$root\user\savedata"
+            Remove-Item -Recurse -Force $backup
+        }
     }
     foreach ($t in $copied) { Remove-Item -Force $t -ErrorAction SilentlyContinue }
     foreach ($t in $kept) { Move-Item "$t.game-world-kept" $t }

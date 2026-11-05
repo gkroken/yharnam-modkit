@@ -17,12 +17,13 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
 static const BbHostApi *g_api;
 static char g_table[64] = "EquipParamWeapon", g_field[64] = "attackBasePhysics", g_value[64] = "150";
 static uint32_t g_row = 2000000;
 static int g_done;
-static unsigned g_frames;
+static ULONGLONG g_deadline;  /* ms: frames run at 30, 60, 120... so count time */
 
 static void text_option(const char *key, char *out, size_t n) {
     const char *v = g_api->config(key);
@@ -35,7 +36,8 @@ static void text_option(const char *key, char *out, size_t n) {
 static void on_frame(void *user) {
     (void)user;
     if (g_done) return;
-    if (++g_frames > 30 * 60 * 5) {  /* five minutes at 30 FPS without the table: give up */
+    if (!g_deadline) g_deadline = GetTickCount64() + 5 * 60 * 1000;
+    if (GetTickCount64() > g_deadline) {  /* five minutes without the table: give up */
         g_done = 1;
         g_api->log("%s row %u never appeared", g_table, g_row);
         return;
