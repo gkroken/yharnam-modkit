@@ -31,6 +31,12 @@ static void *g_frame_user;
 static char g_dir[MAX_PATH];
 static BbHostApi g_api;
 
+/* Two mod names over 64 bytes, the same for their first 67 (tool-51d16fc-F1): one disabled, one not. */
+#define LONG_MOD "A_very_long_mod_name_that_goes_well_past_sixty_four_bytes_of_text__"
+#define LONG_OFF LONG_MOD "off"
+#define LONG_ON LONG_MOD "on"
+
+
 static void host_log(const char *fmt, ...) {
     char line[1024];
     va_list ap;
@@ -44,6 +50,7 @@ static void host_log(const char *fmt, ...) {
 static const char *host_config(const char *key) {
     if (!strcmp(key, "a_good.greeting")) return "hello from plugins.ini";
     if (!strcmp(key, "alpha/main.colour")) return "red";
+    if (!strcmp(key, LONG_ON "/main.colour")) return "green";
     return "";
 }
 static char g_mods[MAX_PATH];
@@ -204,6 +211,25 @@ static int stopped_alone(const char *dll, const char *tag, const char *text) {
     return strstr(g_log, want) != NULL;
 }
 
+/* A fresh copy of the DLL loaded with BB_MODS_CONFIG naming a file holding `json`: g_log has
+ * what it logged. */
+static int load_with_config(const char *dll, const char *tag, const char *json, size_t len) {
+    char config[MAX_PATH], copy[MAX_PATH];
+    snprintf(config, sizeof config, "%s\\%s-mods.json", g_dir, tag);
+    FILE *f = fopen(config, "wb");
+    fwrite(json, 1, len, f);
+    fclose(f);
+    SetEnvironmentVariableA("BB_MODS_CONFIG", config);
+    snprintf(copy, sizeof copy, "%s\\bb_lua_%s.dll", g_dir, tag);
+    if (!CopyFileA(dll, copy, FALSE)) return 0;
+    g_log[0] = 0;
+    HMODULE m = LoadLibraryA(copy);
+    int (*image)(const BbHostApi *) = m ? (int (*)(const BbHostApi *))(void *)GetProcAddress(m, "bb_plugin_image") : NULL;
+    const int ok = image && image(&g_api) == 0;
+    SetEnvironmentVariableA("BB_MODS_CONFIG", NULL);
+    return ok;
+}
+
 static void write_script(const char *name, const char *text) {
     char path[MAX_PATH];
     snprintf(path, sizeof path, "%s\\lua\\%s", g_dir, name);
@@ -313,8 +339,20 @@ int main(int argc, char **argv) {
         snprintf(p, sizeof p, "%s\\mods.json", g_dir);
         FILE *f = fopen(p, "wb");
         /* A disabled name holding brackets and an escaped quote comes first: gamma must still be read. */
-        fputs("{\"version\": 1, \"note\": \"]\", \"disabled\": [\"Cool Mod [v2] \\\"x\\\"\", \"gamma\"],\n"
+        fputs("{\"version\": 1, \"note\": \"]\", \"disabled\": [\"Cool Mod [v2] \\\"x\\\"\", \"gamma\", \"" LONG_OFF "\"],\n"
               " \"order\": [\"beta\", \"alpha\"]}", f);
+        fclose(f);
+    }
+    for (int i = 0; i < 2; ++i) {  /* the long-named mods */
+        const char *name = i ? LONG_ON : LONG_OFF;
+        char p[MAX_PATH];
+        snprintf(p, sizeof p, "%s\\%s", g_mods, name);
+        CreateDirectoryA(p, NULL);
+        snprintf(p + strlen(p), sizeof p - strlen(p), "\\scripts");
+        CreateDirectoryA(p, NULL);
+        snprintf(p + strlen(p), sizeof p - strlen(p), "\\main.lua");
+        FILE *f = fopen(p, "wb");
+        fprintf(f, "bb.log('long %s running, colour', bb.config('colour'))\n", i ? "on" : "off");
         fclose(f);
     }
 
@@ -373,7 +411,11 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "a_good: loaded") < strstr(g_log, "b_errors: loaded"));
     CHECK(strstr(g_log, "f_sandbox: sandbox: closed"));
     CHECK(!strstr(g_log, "readme"));
-    CHECK(strstr(g_log, "14 script(s) running, 1 stopped"));
+    CHECK(strstr(g_log, "15 script(s) running, 1 stopped"));
+    /* tool-51d16fc-F1: names are compared whole. The disabled long one is left out, its twin runs
+     * under its whole name, and reads its own plugins.ini section. */
+    CHECK(!strstr(g_log, "long off running") && strstr(g_log, "mod " LONG_OFF " is disabled"));
+    CHECK(strstr(g_log, LONG_ON "/main: long on running, colour green"));
     CHECK(strstr(g_log, "Bl\xc3\xb8""d/main: the non-ASCII mod ran"));     /* F2 */
     CHECK(strstr(g_log, "beta/main: loaded") < strstr(g_log, "alpha/main: loaded"));  /* the player's order (N1) */
     /* Mods' scripts: named "<mod>/<file>", their own plugins.ini section, a disabled mod left out. */
@@ -437,6 +479,52 @@ int main(int argc, char **argv) {
         CHECK(strstr(g_log, "mod alpha is disabled") && !strstr(g_log, "alpha main running"));
         CHECK(strstr(g_log, "gamma main running"));  /* that file doesn't disable gamma */
         _putenv("BB_MODS_CONFIG=");
+        SetEnvironmentVariableA("BB_MODS_CONFIG", NULL);
+    }
+
+    /* tool-51d16fc-F1: a mods.json that can't be read whole loads no mod's scripts (the user's own
+     * scripts still load), with a log line. */
+    {
+        static const char *const broken[] = {
+            "{\"disabled\": [\"alpha\"",        /* cut off */
+            "{\"disabled\": null}",              /* not a list: mods.py refuses it too */
+            "{\"disabled\": [\"alpha\", 5]}",    /* not all names */
+            "{\"disabled\": [\"al\\u00\"]}",     /* a bad escape */
+            "{\"disabled\": [\"alpha\"]} trailing",
+            "",
+        };
+        g_api = api;
+        for (size_t i = 0; i < sizeof broken / sizeof *broken; ++i) {
+            char tag[32];
+            snprintf(tag, sizeof tag, "broken%zu", i);
+            CHECK(load_with_config(argv[1], tag, broken[i], strlen(broken[i])));
+            CHECK(strstr(g_log, "mods.json could not be read whole: no mod's scripts are loaded"));
+            CHECK(!strstr(g_log, "main running") && !strstr(g_log, "/main: loaded"));
+            CHECK(strstr(g_log, "a_good: loaded"));
+        }
+        /* No cap on the list: 1000 names, beta last, each longer than the old 64 bytes. */
+        size_t cap = 1 << 20, len = 0;
+        char *big = malloc(cap);
+        len += (size_t)snprintf(big + len, cap - len, "{\"disabled\": [");
+        for (int i = 0; i < 1000; ++i)
+            len += (size_t)snprintf(big + len, cap - len, "\"%s%04d\", ", LONG_MOD, i);
+        len += (size_t)snprintf(big + len, cap - len, "\"beta\"]}");
+        CHECK(load_with_config(argv[1], "biglist", big, len));
+        CHECK(strstr(g_log, "mod beta is disabled") && !strstr(g_log, "beta main running"));
+        CHECK(strstr(g_log, "alpha main running") && strstr(g_log, "long off running"));
+        free(big);
+        /* No mods.json at all: every mod on, as mods.py has it. */
+        char missing[MAX_PATH];
+        snprintf(missing, sizeof missing, "%s\\no-such-mods.json", g_dir);
+        SetEnvironmentVariableA("BB_MODS_CONFIG", missing);
+        char copy[MAX_PATH];
+        snprintf(copy, sizeof copy, "%s\\bb_lua_missing.dll", g_dir);
+        CopyFileA(argv[1], copy, FALSE);
+        g_log[0] = 0;
+        HMODULE m = LoadLibraryA(copy);
+        int (*image3)(const BbHostApi *) = (int (*)(const BbHostApi *))(void *)GetProcAddress(m, "bb_plugin_image");
+        CHECK(image3 && image3(&g_api) == 0);
+        CHECK(strstr(g_log, "gamma main running") && strstr(g_log, "long off running"));
         SetEnvironmentVariableA("BB_MODS_CONFIG", NULL);
     }
 
