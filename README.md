@@ -15,7 +15,7 @@ while the game plays, not only replace files.
 | `docs/` | Plan and research |
 | `sdk/` | *(Phase 2)* plugin headers and the clang toolchain file |
 | `plugins/examples/` | Example plugins (`hello`, `frame_hook`, `flag_buff`, `weapon_tweak`). `bash tools/build-plugins.sh --install` builds them into `port/plugins/`. |
-| `plugins/lua/` | `bb_lua`, the Lua script host (`docs/LUA.md`). |
+| `plugins/lua/` | `bb_lua`, the Lua script host (`docs/LUA.md`), and example scripts in `examples/`. |
 | `third_party/lua-5.4.7/` | Lua's library sources, unchanged (MIT). |
 | `tests/` | The tool's own tests (the Lua host against a fake host), run by `tools/test-port.sh`. |
 | `tools/` | `test-port.sh` (the test gate, against `test-baseline.txt`), `build-plugins.sh`, and `game-world.ps1` (in-game checks with a loaded character). |

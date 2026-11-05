@@ -2,8 +2,11 @@
  * bb_lua: Lua 5.4 scripts as plugins, so a mod can change the game without a compiler. A native
  * plugin (bbhost's API) like any other; each .lua file is a script with its own Lua state.
  *
- * Where scripts come from: <user>\plugins\lua\*.lua (this plugin's plugin_dir), loaded in name order
- * during bb_plugin_image, so they may register what must be registered then (bb.flag.on).
+ * Where scripts come from, loaded in this order during bb_plugin_image (so they may register what
+ * must be registered then, bb.flag.on):
+ *   - <user>\plugins\lua\*.lua (this plugin's plugin_dir), named by file: "hello";
+ *   - <mods>\<mod>\scripts\*.lua for each mod not disabled in mods.json, named "<mod>/<file>", so two
+ *     mods may each have a main.lua. A script's plugins.ini section is its name: [mymod/main].
  *
  * What a script may do: the `bb` table (docs/LUA.md) and a reduced standard library: base, table,
  * string, math, utf8, coroutine, and os.clock/os.time/os.date. Nothing that reads or writes files,
@@ -399,11 +402,21 @@ static void open_sandbox(lua_State *L) {
         const char *name;
         const luaL_Reg *fns;
     } groups[] = {{"flag", FLAG}, {"param", PARAM}, {"player", PLAYER}, {"effect", EFFECT}, {"chr", CHR}};
+    /* Argument errors name the function from the loaded-modules table: listing bb and its parts
+     * there makes them say "bb.effect.has" (tool-9bb9566-N1). Scripts can't reach the table. */
+    luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_LOADED_TABLE);
     for (size_t i = 0; i < sizeof groups / sizeof *groups; ++i) {
         lua_newtable(L);
         luaL_setfuncs(L, groups[i].fns, 0);
-        lua_setfield(L, -2, groups[i].name);
+        lua_pushvalue(L, -1);
+        char loaded_name[32];
+        snprintf(loaded_name, sizeof loaded_name, "bb.%s", groups[i].name);
+        lua_setfield(L, -3, loaded_name);
+        lua_setfield(L, -3, groups[i].name);
     }
+    lua_pushvalue(L, -2);
+    lua_setfield(L, -2, "bb");
+    lua_pop(L, 1);
     lua_setglobal(L, "bb");
     lua_pushcfunction(L, l_log);
     lua_setglobal(L, "print");
@@ -439,16 +452,18 @@ static int call(Script *s, int nargs) {
     return 1;
 }
 
-static void load_script(const wchar_t *path, const wchar_t *file) {
+static void load_script(const wchar_t *path, const wchar_t *file, const char *prefix) {
     if (g_count == MAX_SCRIPTS) {
         g_api->log("more than %d scripts: the rest are left out", MAX_SCRIPTS);
         return;
     }
     Script *s = &g_scripts[g_count];
     memset(s, 0, sizeof *s);
-    WideCharToMultiByte(CP_UTF8, 0, file, -1, s->name, NAME_LEN, NULL, NULL);
-    char *dot = strrchr(s->name, '.');
+    char stem[NAME_LEN];
+    WideCharToMultiByte(CP_UTF8, 0, file, -1, stem, NAME_LEN, NULL, NULL);
+    char *dot = strrchr(stem, '.');
     if (dot) *dot = 0;
+    snprintf(s->name, NAME_LEN, "%s%s", prefix, stem);  /* "mod/script" for a mod's scripts */
     char utf8_path[MAX_PATH * 3];
     WideCharToMultiByte(CP_UTF8, 0, path, -1, utf8_path, sizeof utf8_path, NULL, NULL);
     /* The source, read here (no io for scripts). */
@@ -489,7 +504,7 @@ static void load_script(const wchar_t *path, const wchar_t *file) {
     if (!call(s, 0)) g_api->log("%s: loaded (%s)", s->name, utf8_path);
 }
 
-static void load_folder(const char *folder) {
+static void load_folder(const char *folder, const char *prefix) {
     if (!folder || !*folder) return;
     wchar_t dir[MAX_PATH], pattern[MAX_PATH];
     if (!MultiByteToWideChar(CP_UTF8, 0, folder, -1, dir, MAX_PATH)) return;
@@ -515,7 +530,68 @@ static void load_folder(const char *folder) {
     for (int i = 0; i < n; ++i) {
         wchar_t path[MAX_PATH];
         _snwprintf(path, MAX_PATH, L"%ls\\%ls", dir, names[i]);
-        load_script(path, names[i]);
+        load_script(path, names[i], prefix);
+    }
+}
+
+/* --- scripts that come with mods ------------------------------------------------------------------- */
+
+/* Whether `mod` is in the "disabled" list of the port's mods.json (beside the mods folder, as
+ * the launcher keeps it: {"disabled": ["name", ...], "order": [...]}). A small reader for that
+ * one list; a mod missing from it is on. */
+static int mod_disabled(const char *mods_dir, const char *mod) {
+    char path[MAX_PATH * 3];
+    snprintf(path, sizeof path, "%s\\..\\mods.json", mods_dir);
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    char text[16384];
+    const size_t n = fread(text, 1, sizeof text - 1, f);
+    fclose(f);
+    text[n] = 0;
+    const char *list = strstr(text, "\"disabled\"");
+    const char *open = list ? strchr(list, '[') : NULL;
+    const char *close = open ? strchr(open, ']') : NULL;
+    if (!open || !close) return 0;
+    char quoted[NAME_LEN + 2];
+    snprintf(quoted, sizeof quoted, "\"%s\"", mod);
+    const char *hit = strstr(open, quoted);
+    return hit && hit < close;
+}
+
+/* <mods>\<mod>\scripts\*.lua for every mod folder that isn't disabled, in folder name order. */
+static void load_mods(const char *mods_dir) {
+    if (!mods_dir || !*mods_dir) return;
+    wchar_t dir[MAX_PATH], pattern[MAX_PATH];
+    if (!MultiByteToWideChar(CP_UTF8, 0, mods_dir, -1, dir, MAX_PATH)) return;
+    _snwprintf(pattern, MAX_PATH, L"%ls\\*", dir);
+    WIN32_FIND_DATAW found;
+    HANDLE h = FindFirstFileW(pattern, &found);
+    if (h == INVALID_HANDLE_VALUE) return;
+    wchar_t mods[MAX_SCRIPTS][MAX_PATH];
+    int n = 0;
+    do {
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && found.cFileName[0] != L'.' && n < MAX_SCRIPTS)
+            wcscpy(mods[n++], found.cFileName);
+    } while (FindNextFileW(h, &found));
+    FindClose(h);
+    for (int i = 1; i < n; ++i)
+        for (int j = i; j > 0 && _wcsicmp(mods[j - 1], mods[j]) > 0; --j) {
+            wchar_t t[MAX_PATH];
+            wcscpy(t, mods[j]);
+            wcscpy(mods[j], mods[j - 1]);
+            wcscpy(mods[j - 1], t);
+        }
+    for (int i = 0; i < n; ++i) {
+        char mod[NAME_LEN], scripts[MAX_PATH * 3], prefix[NAME_LEN + 2];
+        WideCharToMultiByte(CP_UTF8, 0, mods[i], -1, mod, sizeof mod, NULL, NULL);
+        snprintf(scripts, sizeof scripts, "%s\\%s\\scripts", mods_dir, mod);
+        if (GetFileAttributesA(scripts) == INVALID_FILE_ATTRIBUTES) continue;
+        if (mod_disabled(mods_dir, mod)) {
+            g_api->log("mod %s is disabled (mods.json): its scripts are not loaded", mod);
+            continue;
+        }
+        snprintf(prefix, sizeof prefix, "%s/", mod);
+        load_folder(scripts, prefix);
     }
 }
 
@@ -577,7 +653,8 @@ BB_PLUGIN_EXPORT int bb_plugin_image(const BbHostApi *api) {
         api->log("this host's API is older than 16: not starting");
         return 1;
     }
-    load_folder(api->plugin_dir("lua"));
+    load_folder(api->plugin_dir("lua"), "");
+    load_mods(api->mods_dir ? api->mods_dir() : NULL);
     int on = 0;
     for (int i = 0; i < g_count; ++i) on += g_scripts[i].on;
     api->log("%d script(s) running, %d stopped", on, g_count - on);

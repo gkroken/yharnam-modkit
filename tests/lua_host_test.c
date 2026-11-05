@@ -43,8 +43,11 @@ static void host_log(const char *fmt, ...) {
 }
 static const char *host_config(const char *key) {
     if (!strcmp(key, "a_good.greeting")) return "hello from plugins.ini";
+    if (!strcmp(key, "alpha/main.colour")) return "red";
     return "";
 }
+static char g_mods[MAX_PATH];
+static const char *host_mods_dir(void) { return g_mods; }
 static const char *host_plugin_dir(const char *name) {
     static char dir[MAX_PATH];
     snprintf(dir, sizeof dir, "%s\\%s", g_dir, name);
@@ -285,7 +288,33 @@ int main(int argc, char **argv) {
                  "bb.flag.on(function(id, on) bb.log('flag changed', id, on) end)\n"
                  "bb.on_world_load(function(block) bb.log(string.format('world load 0x%08x', block)) end)\n"
                  "local ok, err = pcall(bb.effect.apply, 2200, 'not a character')\n"
-                 "bb.log('bad chr argument raises', not ok)\n");
+                 "bb.log('bad chr argument raises', not ok)\n"
+                 "local _, named = pcall(bb.effect.has, 2200, 12345)\n"
+                 "bb.log('error names', named)\n");
+
+    /* Mods with scripts: two with a main.lua each, one disabled in mods.json, one without scripts. */
+    snprintf(g_mods, sizeof g_mods, "%s\\mods", g_dir);
+    CreateDirectoryA(g_mods, NULL);
+    static const char *const mod_names[] = {"alpha", "beta", "gamma", "delta"};
+    for (int i = 0; i < 4; ++i) {
+        char p[MAX_PATH];
+        snprintf(p, sizeof p, "%s\\%s", g_mods, mod_names[i]);
+        CreateDirectoryA(p, NULL);
+        if (i == 3) continue;  /* delta: no scripts folder */
+        snprintf(p + strlen(p), sizeof p - strlen(p), "\\scripts");
+        CreateDirectoryA(p, NULL);
+        snprintf(p + strlen(p), sizeof p - strlen(p), "\\main.lua");
+        FILE *f = fopen(p, "wb");
+        fprintf(f, "bb.log('%s main running, colour', bb.config('colour'))\n", mod_names[i]);
+        fclose(f);
+    }
+    {
+        char p[MAX_PATH];
+        snprintf(p, sizeof p, "%s\\mods.json", g_dir);
+        FILE *f = fopen(p, "wb");
+        fputs("{\"disabled\": [\"gamma\"], \"order\": [\"beta\", \"alpha\"]}", f);
+        fclose(f);
+    }
 
     HMODULE dll = LoadLibraryA(argv[1]);
     CHECK(dll);
@@ -318,6 +347,7 @@ int main(int argc, char **argv) {
     api.sp_effect_apply = host_effect_apply;
     api.sp_effect_has = host_effect_has;
     api.show_text = host_show_text;
+    api.mods_dir = host_mods_dir;
 
     CHECK(image(&api) == 0 && g_frame);
     /* Loading: the good ones loaded, the syntax error stopped at load, in name order. */
@@ -327,7 +357,11 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "a_good: loaded") < strstr(g_log, "b_errors: loaded"));
     CHECK(strstr(g_log, "f_sandbox: sandbox: closed"));
     CHECK(!strstr(g_log, "readme"));
-    CHECK(strstr(g_log, "11 script(s) running, 1 stopped"));
+    CHECK(strstr(g_log, "13 script(s) running, 1 stopped"));
+    /* Mods' scripts: named "<mod>/<file>", their own plugins.ini section, a disabled mod left out. */
+    CHECK(strstr(g_log, "alpha/main: alpha main running, colour red") && strstr(g_log, "beta/main: beta main running, colour nil"));
+    CHECK(!strstr(g_log, "gamma main running") && strstr(g_log, "mod gamma is disabled"));
+    CHECK(strstr(g_log, "f_sandbox: loaded") < strstr(g_log, "alpha/main: loaded"));  /* the user's scripts first */
     /* The game bindings, as the fake host saw them. */
     CHECK(strstr(g_log, "m_game: flag 5 false flag 500 nil"));
     CHECK(strstr(g_log, "m_game: set flag 5 true true") && g_flags[5] == 1);
@@ -340,6 +374,7 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "m_game: text true true") && !strcmp(g_text, "placed") && g_text_x == 0.25f &&
           g_text_align == (BB_TEXT_RIGHT | BB_TEXT_BOTTOM));
     CHECK(strstr(g_log, "m_game: bad chr argument raises true"));
+    CHECK(strstr(g_log, "bad argument #2 to 'bb.effect.has'"));  /* tool-9bb9566-N1 */
     CHECK(g_flag_cb && g_load_cb);
 
     for (int i = 0; i < 5; ++i) g_frame(g_frame_user);

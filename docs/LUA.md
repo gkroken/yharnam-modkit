@@ -14,6 +14,20 @@ state.
 The log shows each script loading (`Plugin lua: <script>: loaded`), its own lines, and why any
 stopped.
 
+## Scripts in a mod
+
+A mod can ship scripts beside its files: `mods\<mod>\scripts\*.lua`.
+- **Names:** they're named `<mod>/<file>` (`mymod/main`), so two mods can each have a
+  `main.lua`. The name is also their `plugins.ini` section: `[mymod/main]`.
+- **Order:** they load after `<user>\plugins\lua\`, mods in folder-name order.
+- **Disabled mods:** a mod disabled in the port's `mods.json` (the launcher's Mods page) has its
+  scripts left out too.
+- **Script-only mods:** a mod made only of scripts is fine. The port's mod merging lists it as
+  having no game files and carries on.
+
+`plugins/lua/examples/` has two scripts to start from: `flag_buff.lua` (a SpEffect each time a
+chosen flag turns on) and `weapon_tweak.lua` (one param field changed by name).
+
 ## The `bb` table
 
 Every call goes through the native plugin API (`port/docs/PLUGINS.md`), with the same rules: the
