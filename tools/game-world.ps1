@@ -10,11 +10,12 @@
 # - Needs the source tree's own save (port\user\savedata, with a character), and the game's
 #   window on the primary display: it moves the mouse and clicks Continue.
 # - -Keys: once in the world, each key (F1..F12, A..Z) is pressed and released in turn, a second
-#   apart, but only while the game's window is in front (never into anyone else's window).
+#   apart, but only while the game's window is in front (never into anyone else's window). Each is
+#   held -KeyHoldMs (120); 0 is a tap shorter than a frame.
 # - The save is copied first and put back afterwards, so a run leaves it as it was.
 # - The dump: BB_GAME_DIR, else C:/games/Bloodborne/game. Python: -Python, else the per-user
 #   python.org 3.13.
-param([string[]]$Plugins = @(), [int]$Seconds = 40, [string[]]$Keys = @(), [string]$Log = "$env:TEMP\bb-game-world.log",
+param([string[]]$Plugins = @(), [int]$Seconds = 40, [string[]]$Keys = @(), [int]$KeyHoldMs = 120, [string]$Log = "$env:TEMP\bb-game-world.log",
       [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe")
 $ErrorActionPreference = 'Stop'
 $root = Join-Path (Split-Path -Parent $PSScriptRoot) 'port'
@@ -56,7 +57,7 @@ function Press($handle, $key) {
     if ([GW]::GetForegroundWindow() -ne $handle) { "key $key not pressed: the game is not in front"; return }
     $vk = if ($key.Length -gt 1) { 0x6F + [int]$key.Substring(1) } else { [int][char]$key.ToUpper() }
     $scan = [byte][GW]::MapVirtualKey($vk, 0)
-    [GW]::keybd_event([byte]$vk, $scan, 8, [UIntPtr]::Zero); Start-Sleep -Milliseconds 120   # KEYEVENTF_SCANCODE
+    [GW]::keybd_event([byte]$vk, $scan, 8, [UIntPtr]::Zero); Start-Sleep -Milliseconds $KeyHoldMs   # KEYEVENTF_SCANCODE
     [GW]::keybd_event([byte]$vk, $scan, 10, [UIntPtr]::Zero)                                 # + KEYUP
     "key $key pressed"
 }

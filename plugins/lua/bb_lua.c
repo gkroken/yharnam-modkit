@@ -905,9 +905,10 @@ static int key_code(lua_State *L, int at) {
         if (n == 1 && k[0] >= 'a' && k[0] <= 'z') return 4 + (k[0] - 'a');
         if (n == 1 && k[0] >= '1' && k[0] <= '9') return 30 + (k[0] - '1');
         if (n == 1 && k[0] == '0') return 39;
-        if (k[0] == 'f' && n >= 2 && n <= 3) {
+        /* f1..f12: digits only after the f, so a typo ("f1x") is an error, not F1 (tool-f2ab4ec-F1). */
+        if (k[0] == 'f' && n >= 2 && n <= 3 && k[1] >= '1' && k[1] <= '9' && (n == 2 || (k[2] >= '0' && k[2] <= '9'))) {
             const int f = atoi(k + 1);
-            if (f >= 1 && f <= 12 && k[1] != '0') return 57 + f;
+            if (f <= 12) return 57 + f;
         }
         if (!strncmp(k, "kp", 2) && n == 3 && k[2] >= '0' && k[2] <= '9') return k[2] == '0' ? 98 : 89 + (k[2] - '1');
         static const struct { const char *name; int code; } named[] = {

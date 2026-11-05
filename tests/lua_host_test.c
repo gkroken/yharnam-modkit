@@ -603,9 +603,16 @@ int main(int argc, char **argv) {
                          "end)\n"
                          "bb.log('names', select('#', pcall(bb.input.down, 'nope')), (pcall(bb.input.down, 'nope')),\n"
                          "       (pcall(bb.input.down, 600)), bb.input.down('KP0'), bb.input.down('f12'), bb.input.down('lshift'))\n"
+                         "local typos = {}\n"
+                         "for _, name in ipairs({'f1x', 'f2a', 'f1-', 'f0', 'f01', 'f13', 'f1 ', 'kp10', 'spacebar'}) do\n"
+                         "  local ok, err = pcall(bb.input.down, name)\n"
+                         "  if ok or not tostring(err):find('no key named', 1, true) then typos[#typos + 1] = name end\n"
+                         "end\n"
+                         "bb.log('typos accepted:', #typos, table.concat(typos, ','))\n"
                          "bb.log('before frames', bb.input.down('f5'), bb.input.playing())\n"));
         CHECK(strstr(g_log, "keys: names 2 false false false false false"));
         CHECK(strstr(g_log, "keys: before frames false false"));
+        CHECK(strstr(g_log, "keys: typos accepted: 0 \n"));  /* tool-f2ab4ec-F1: "f1x" isn't F1 */
         const int calls = g_input_calls;
         /* 1: F5 goes down while playing, left held, right clicked, motion and a notch down. */
         g_input_now.playing = 1;
