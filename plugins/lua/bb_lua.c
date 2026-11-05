@@ -536,62 +536,204 @@ static void load_folder(const char *folder, const char *prefix) {
 
 /* --- scripts that come with mods ------------------------------------------------------------------- */
 
-/* Whether `mod` is in the "disabled" list of the port's mods.json (beside the mods folder, as
- * the launcher keeps it: {"disabled": ["name", ...], "order": [...]}). A small reader for that
- * one list; a mod missing from it is on. */
-static int mod_disabled(const char *mods_dir, const char *mod) {
-    char path[MAX_PATH * 3];
-    snprintf(path, sizeof path, "%s\\..\\mods.json", mods_dir);
-    FILE *f = fopen(path, "rb");
-    if (!f) return 0;
-    char text[16384];
-    const size_t n = fread(text, 1, sizeof text - 1, f);
-    fclose(f);
-    text[n] = 0;
-    const char *list = strstr(text, "\"disabled\"");
-    const char *open = list ? strchr(list, '[') : NULL;
-    const char *close = open ? strchr(open, ']') : NULL;
-    if (!open || !close) return 0;
-    char quoted[NAME_LEN + 2];
-    snprintf(quoted, sizeof quoted, "\"%s\"", mod);
-    const char *hit = strstr(open, quoted);
-    return hit && hit < close;
+/* The player's mod settings: the launcher's mods.json, the file scripts/mods.py reads
+ * (BB_MODS_CONFIG; else beside the mods folder). {"disabled": ["name", ...], "order": [...]}. */
+enum { MAX_MODS = 256 };
+typedef struct {
+    char disabled[MAX_MODS][NAME_LEN];
+    int ndisabled;
+    char order[MAX_MODS][NAME_LEN];
+    int norder;
+} ModSettings;
+
+static void put_utf8(char *out, size_t *w, size_t cap, unsigned code) {
+    char b[4];
+    size_t n = 0;
+    if (code < 0x80) b[n++] = (char)code;
+    else if (code < 0x800) b[n++] = (char)(0xc0 | code >> 6), b[n++] = (char)(0x80 | (code & 0x3f));
+    else b[n++] = (char)(0xe0 | code >> 12), b[n++] = (char)(0x80 | ((code >> 6) & 0x3f)), b[n++] = (char)(0x80 | (code & 0x3f));
+    for (size_t i = 0; i < n && *w + 1 < cap; ++i) out[(*w)++] = b[i];
 }
 
-/* <mods>\<mod>\scripts\*.lua for every mod folder that isn't disabled, in folder name order. */
+/* A JSON string at *p (on its opening quote) into out, UTF-8; *p ends after the closing quote.
+ * 0 on a malformed string. Surrogate pairs come out as two 3-byte sequences (names are BMP). */
+static int json_string(const char **p, char *out, size_t cap) {
+    const char *s = *p;
+    size_t w = 0;
+    if (*s++ != '"') return 0;
+    while (*s && *s != '"') {
+        unsigned c = (unsigned char)*s++;
+        if (c == '\\') {
+            const char e = *s++;
+            if (e == 'u') {
+                unsigned code = 0;
+                for (int i = 0; i < 4; ++i, ++s) {
+                    const char h = *s;
+                    if (!h) return 0;
+                    code = code * 16 + (unsigned)(h <= '9' ? h - '0' : (h | 0x20) - 'a' + 10);
+                }
+                put_utf8(out, &w, cap, code);
+                continue;
+            }
+            c = e == 'n' ? '\n' : e == 't' ? '\t' : e == 'r' ? '\r' : e == 'b' ? '\b' : e == 'f' ? '\f' : (unsigned char)e;
+            if (!e) return 0;
+        }
+        if (w + 1 < cap) out[w++] = (char)c;
+    }
+    if (*s != '"') return 0;
+    out[w] = 0;
+    *p = s + 1;
+    return 1;
+}
+
+static const char *skip_space(const char *p) {
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') ++p;
+    return p;
+}
+
+/* Skips one JSON value of any kind; NULL when malformed. */
+static const char *skip_value(const char *p) {
+    p = skip_space(p);
+    if (*p == '"') {
+        /* a string of any length: scan, honouring escapes */
+        ++p;
+        while (*p && *p != '"') p += (*p == '\\' && p[1]) ? 2 : 1;
+        return *p ? p + 1 : NULL;
+    }
+    if (*p == '[' || *p == '{') {
+        const char close = *p == '[' ? ']' : '}';
+        p = skip_space(p + 1);
+        if (*p == close) return p + 1;
+        for (;;) {
+            if (close == '}') {
+                if (!(p = skip_value(p))) return NULL;  /* the key */
+                p = skip_space(p);
+                if (*p++ != ':') return NULL;
+            }
+            if (!(p = skip_value(p))) return NULL;
+            p = skip_space(p);
+            if (*p == ',') { p = skip_space(p + 1); continue; }
+            return *p == close ? p + 1 : NULL;
+        }
+    }
+    while (*p && *p != ',' && *p != ']' && *p != '}' && *p != ' ' && *p != '\r' && *p != '\n') ++p;  /* number, true... */
+    return p;
+}
+
+/* The top-level object's string arrays "disabled" and "order". Unknown keys and other shapes are
+ * skipped; a malformed file leaves what was read so far. */
+static void parse_mod_settings(const char *text, ModSettings *m) {
+    const char *p = skip_space(text);
+    if (*p++ != '{') return;
+    for (;;) {
+        p = skip_space(p);
+        char key[32];
+        if (*p != '"' || !json_string(&p, key, sizeof key)) return;
+        p = skip_space(p);
+        if (*p++ != ':') return;
+        p = skip_space(p);
+        const int disabled = !strcmp(key, "disabled"), order = !strcmp(key, "order");
+        if ((disabled || order) && *p == '[') {
+            p = skip_space(p + 1);
+            while (*p == '"') {
+                char name[NAME_LEN * 2];
+                if (!json_string(&p, name, sizeof name)) return;
+                int *n = disabled ? &m->ndisabled : &m->norder;
+                char (*list)[NAME_LEN] = disabled ? m->disabled : m->order;
+                if (*n < MAX_MODS && strlen(name) < NAME_LEN) strcpy(list[(*n)++], name);
+                p = skip_space(p);
+                if (*p == ',') p = skip_space(p + 1);
+            }
+            if (*p++ != ']') return;
+        } else if (!(p = skip_value(p))) {
+            return;
+        }
+        p = skip_space(p);
+        if (*p == ',') { ++p; continue; }
+        return;
+    }
+}
+
+static void load_mod_settings(const char *mods_dir, ModSettings *m) {
+    memset(m, 0, sizeof *m);
+    wchar_t path[MAX_PATH];
+    const wchar_t *env = _wgetenv(L"BB_MODS_CONFIG");
+    if (env && *env) {
+        wcsncpy(path, env, MAX_PATH - 1);
+        path[MAX_PATH - 1] = 0;
+    } else {
+        wchar_t dir[MAX_PATH];
+        if (!MultiByteToWideChar(CP_UTF8, 0, mods_dir, -1, dir, MAX_PATH)) return;
+        _snwprintf(path, MAX_PATH, L"%ls\\..\\mods.json", dir);
+    }
+    FILE *f = _wfopen(path, L"rb");
+    if (!f) return;
+    fseek(f, 0, SEEK_END);
+    const long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *text = size > 0 && size < 16 * 1024 * 1024 ? malloc((size_t)size + 1) : NULL;
+    if (text && fread(text, 1, (size_t)size, f) == (size_t)size) {
+        text[size] = 0;
+        parse_mod_settings(text, m);
+    }
+    free(text);
+    fclose(f);
+}
+
+static int listed(char (*list)[NAME_LEN], int n, const char *name) {
+    for (int i = 0; i < n; ++i)
+        if (!strcmp(list[i], name)) return i;
+    return -1;
+}
+
+/* <mods>\<mod>\scripts\*.lua for every mod folder not disabled, in the player's order (mods.json),
+ * then the rest in folder-name order, as scripts/mods.py orders the mods' files. */
 static void load_mods(const char *mods_dir) {
     if (!mods_dir || !*mods_dir) return;
+    static ModSettings settings;
+    load_mod_settings(mods_dir, &settings);
     wchar_t dir[MAX_PATH], pattern[MAX_PATH];
     if (!MultiByteToWideChar(CP_UTF8, 0, mods_dir, -1, dir, MAX_PATH)) return;
     _snwprintf(pattern, MAX_PATH, L"%ls\\*", dir);
     WIN32_FIND_DATAW found;
     HANDLE h = FindFirstFileW(pattern, &found);
     if (h == INVALID_HANDLE_VALUE) return;
-    wchar_t mods[MAX_SCRIPTS][MAX_PATH];
+    static wchar_t mods[MAX_MODS][MAX_PATH];
+    static char names[MAX_MODS][NAME_LEN];
+    static int rank[MAX_MODS];
     int n = 0;
     do {
-        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && found.cFileName[0] != L'.' && n < MAX_SCRIPTS)
-            wcscpy(mods[n++], found.cFileName);
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && found.cFileName[0] != L'.' && n < MAX_MODS) {
+            wcscpy(mods[n], found.cFileName);
+            WideCharToMultiByte(CP_UTF8, 0, found.cFileName, -1, names[n], NAME_LEN, NULL, NULL);
+            const int at = listed(settings.order, settings.norder, names[n]);
+            rank[n] = at >= 0 ? at : MAX_MODS;  /* unlisted after the listed ones */
+            ++n;
+        }
     } while (FindNextFileW(h, &found));
     FindClose(h);
-    for (int i = 1; i < n; ++i)
-        for (int j = i; j > 0 && _wcsicmp(mods[j - 1], mods[j]) > 0; --j) {
-            wchar_t t[MAX_PATH];
-            wcscpy(t, mods[j]);
-            wcscpy(mods[j], mods[j - 1]);
-            wcscpy(mods[j - 1], t);
+    for (int i = 1; i < n; ++i)  /* by rank, then by name */
+        for (int j = i; j > 0 && (rank[j - 1] > rank[j] || (rank[j - 1] == rank[j] && _wcsicmp(mods[j - 1], mods[j]) > 0)); --j) {
+            wchar_t tw[MAX_PATH];
+            char tn[NAME_LEN];
+            const int tr = rank[j];
+            wcscpy(tw, mods[j]), wcscpy(mods[j], mods[j - 1]), wcscpy(mods[j - 1], tw);
+            strcpy(tn, names[j]), strcpy(names[j], names[j - 1]), strcpy(names[j - 1], tn);
+            rank[j] = rank[j - 1], rank[j - 1] = tr;
         }
     for (int i = 0; i < n; ++i) {
-        char mod[NAME_LEN], scripts[MAX_PATH * 3], prefix[NAME_LEN + 2];
-        WideCharToMultiByte(CP_UTF8, 0, mods[i], -1, mod, sizeof mod, NULL, NULL);
-        snprintf(scripts, sizeof scripts, "%s\\%s\\scripts", mods_dir, mod);
-        if (GetFileAttributesA(scripts) == INVALID_FILE_ATTRIBUTES) continue;
-        if (mod_disabled(mods_dir, mod)) {
-            g_api->log("mod %s is disabled (mods.json): its scripts are not loaded", mod);
+        wchar_t scripts[MAX_PATH];
+        _snwprintf(scripts, MAX_PATH, L"%ls\\%ls\\scripts", dir, mods[i]);
+        const DWORD attributes = GetFileAttributesW(scripts);
+        if (attributes == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        if (listed(settings.disabled, settings.ndisabled, names[i]) >= 0) {
+            g_api->log("mod %s is disabled (mods.json): its scripts are not loaded", names[i]);
             continue;
         }
-        snprintf(prefix, sizeof prefix, "%s/", mod);
-        load_folder(scripts, prefix);
+        char folder[MAX_PATH * 3], prefix[NAME_LEN + 2];
+        WideCharToMultiByte(CP_UTF8, 0, scripts, -1, folder, sizeof folder, NULL, NULL);
+        snprintf(prefix, sizeof prefix, "%s/", names[i]);
+        load_folder(folder, prefix);
     }
 }
 

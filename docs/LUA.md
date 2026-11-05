@@ -19,9 +19,10 @@ stopped.
 A mod can ship scripts beside its files: `mods\<mod>\scripts\*.lua`.
 - **Names:** they're named `<mod>/<file>` (`mymod/main`), so two mods can each have a
   `main.lua`. The name is also their `plugins.ini` section: `[mymod/main]`.
-- **Order:** they load after `<user>\plugins\lua\`, mods in folder-name order.
-- **Disabled mods:** a mod disabled in the port's `mods.json` (the launcher's Mods page) has its
-  scripts left out too.
+- **Order:** they load after `<user>\plugins\lua\`, mods in the player's order (the launcher's
+  Mods page, `mods.json`), then any others in folder-name order, as the port orders mods' files.
+- **Disabled mods:** a mod disabled in the launcher has its scripts left out too. That's the
+  same `mods.json` the port's mod merging reads (`BB_MODS_CONFIG`).
 - **Script-only mods:** a mod made only of scripts is fine. The port's mod merging lists it as
   having no game files and carries on.
 

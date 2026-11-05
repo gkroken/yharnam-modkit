@@ -312,7 +312,23 @@ int main(int argc, char **argv) {
         char p[MAX_PATH];
         snprintf(p, sizeof p, "%s\\mods.json", g_dir);
         FILE *f = fopen(p, "wb");
-        fputs("{\"disabled\": [\"gamma\"], \"order\": [\"beta\", \"alpha\"]}", f);
+        /* A disabled name holding brackets and an escaped quote comes first: gamma must still be read. */
+        fputs("{\"version\": 1, \"note\": \"]\", \"disabled\": [\"Cool Mod [v2] \\\"x\\\"\", \"gamma\"],\n"
+              " \"order\": [\"beta\", \"alpha\"]}", f);
+        fclose(f);
+    }
+
+    {
+        /* A non-ASCII mod name (tool-009595e-F2): Blød, made with the wide API. */
+        wchar_t wide[MAX_PATH];
+        MultiByteToWideChar(CP_UTF8, 0, g_mods, -1, wide, MAX_PATH);
+        wcscat(wide, L"\\Bl\u00f8d");
+        CreateDirectoryW(wide, NULL);
+        wcscat(wide, L"\\scripts");
+        CreateDirectoryW(wide, NULL);
+        wcscat(wide, L"\\main.lua");
+        FILE *f = _wfopen(wide, L"wb");
+        fputs("bb.log('the non-ASCII mod ran')\n", f);
         fclose(f);
     }
 
@@ -357,7 +373,9 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "a_good: loaded") < strstr(g_log, "b_errors: loaded"));
     CHECK(strstr(g_log, "f_sandbox: sandbox: closed"));
     CHECK(!strstr(g_log, "readme"));
-    CHECK(strstr(g_log, "13 script(s) running, 1 stopped"));
+    CHECK(strstr(g_log, "14 script(s) running, 1 stopped"));
+    CHECK(strstr(g_log, "Bl\xc3\xb8""d/main: the non-ASCII mod ran"));     /* F2 */
+    CHECK(strstr(g_log, "beta/main: loaded") < strstr(g_log, "alpha/main: loaded"));  /* the player's order (N1) */
     /* Mods' scripts: named "<mod>/<file>", their own plugins.ini section, a disabled mod left out. */
     CHECK(strstr(g_log, "alpha/main: alpha main running, colour red") && strstr(g_log, "beta/main: beta main running, colour nil"));
     CHECK(!strstr(g_log, "gamma main running") && strstr(g_log, "mod gamma is disabled"));
@@ -395,6 +413,32 @@ int main(int argc, char **argv) {
     g_flag_cb(77, 1, NULL);
     g_load_cb(0x18000000, NULL);
     CHECK(strstr(g_log, "m_game: flag changed 77 true") && strstr(g_log, "m_game: world load 0x18000000"));
+
+    /* BB_MODS_CONFIG (the launcher's own mods.json, wherever it is) decides over the file beside
+     * the mods folder: here it disables alpha (tool-009595e-F1). */
+    {
+        char config[MAX_PATH];
+        snprintf(config, sizeof config, "%s\\elsewhere-mods.json", g_dir);
+        FILE *f = fopen(config, "wb");
+        fputs("{\"disabled\": [\"alpha\"]}", f);
+        fclose(f);
+        char env[MAX_PATH + 32];
+        snprintf(env, sizeof env, "BB_MODS_CONFIG=%s", config);
+        _putenv(env);
+        SetEnvironmentVariableA("BB_MODS_CONFIG", config);
+        char copy[MAX_PATH];
+        snprintf(copy, sizeof copy, "%s\\bb_lua_config.dll", g_dir);
+        CopyFileA(argv[1], copy, FALSE);
+        g_log[0] = 0;
+        g_api = api;
+        HMODULE m = LoadLibraryA(copy);
+        int (*image2)(const BbHostApi *) = (int (*)(const BbHostApi *))(void *)GetProcAddress(m, "bb_plugin_image");
+        CHECK(image2 && image2(&g_api) == 0);
+        CHECK(strstr(g_log, "mod alpha is disabled") && !strstr(g_log, "alpha main running"));
+        CHECK(strstr(g_log, "gamma main running"));  /* that file doesn't disable gamma */
+        _putenv("BB_MODS_CONFIG=");
+        SetEnvironmentVariableA("BB_MODS_CONFIG", NULL);
+    }
 
     /* Alone, each in a fresh copy of the DLL: loops that catch the budget error. */
     g_api = api;
