@@ -4,6 +4,8 @@ Adds a native plugin API and Lua scripting to the
 [yharnam-pc](https://github.com/Jgamrot/yharnam-pc) Bloodborne port, so mods can run code
 while the game plays, not only replace files.
 
+- [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md): **start here.** Build, a first Lua script, a first plugin.
+- [docs/LUA.md](docs/LUA.md): every Lua call.
 - [docs/WORKPLAN.md](docs/WORKPLAN.md): phases, tasks, risks and open decisions.
 - [docs/RESEARCH.md](docs/RESEARCH.md): what exists today and the prior art.
 
@@ -12,7 +14,7 @@ while the game plays, not only replace files.
 | Path | What |
 |---|---|
 | `port/` | yharnam-pc submodule: our fork `gkroken/yharnam-pc`, branch `plugins` (upstream 2.3.2 plus the plugin host; the guide is `port/docs/PLUGINS.md`) |
-| `docs/` | Plan and research |
+| `docs/` | The getting-started guide, the Lua reference, the plan and the research |
 | `sdk/` | *(Phase 2)* plugin headers and the clang toolchain file |
 | `plugins/examples/` | Example plugins (`hello`, `frame_hook`, `flag_buff`, `weapon_tweak`). `bash tools/build-plugins.sh --install` builds them into `port/plugins/`. |
 | `plugins/lua/` | `bb_lua`, the Lua script host (`docs/LUA.md`), and example scripts in `examples/`. |
