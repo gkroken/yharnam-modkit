@@ -211,15 +211,15 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
         `bb.chr.list`, `bb.message` and `bb.text`.
   - [x] Keyboard and mouse: `bb.input.down/pressed/playing/mouse`, `bb.input.on_key` hotkeys,
         and `bb.input.take`.
-- [ ] Raw memory and hooks are left out of Lua at first. Scripts stay safe, and C plugins cover
-      the rest.
-- [ ] Sandbox: no `os.execute` and no `io` outside the mod's own folder. `require` reads only
-      from the mod folder.
-- [ ] Error isolation: each script runs under `pcall`. If a script errors, it alone is turned
-      off and the error is logged and shown in the guide.
-- [ ] Hot reload from the guide, or with a key (scripts only; hooks stay sealed).
-- [ ] Examples: a flag-triggered buff, a "New Game+ scaling" param tweak, and a lamp
-      notification.
+- [x] Raw memory and hooks are left out of Lua: scripts stay safe, and C plugins cover the rest.
+- [x] Sandbox, stricter than planned: no `io`, `require`, `load`, `string.dump` or `debug` at all;
+      `os` keeps only `clock`, `time` and `date`. A per-call instruction budget and a 64 MiB
+      memory cap per script (docs/LUA.md).
+- [x] Error isolation: each script has its own Lua state and runs under `pcall`. A script that
+      errors, loops or runs out of memory is stopped alone, with a log line and a banner.
+- [ ] Hot reload with a key (scripts only; hooks stay sealed). Next.
+- [ ] Examples: a flag-triggered buff and a weapon param tweak are in
+      (`plugins/lua/examples/`); a lamp notification waits for the Lua warps decision.
 
 **Done when** a mod folder holding only `scripts/*.lua` changes gameplay with no DLL and no
 rebuild.
