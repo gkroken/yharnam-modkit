@@ -53,8 +53,7 @@ if (-not $hasLua) {
     $Plugins += (Resolve-Path $found).Path
 }
 $marker = 'zz_game_world_marker.lua'
-$markerSource = Join-Path $env:TEMP "bb-game-world-$PID-$marker"
-Set-Content -Path $markerSource -Encoding ascii -Value 'bb.on_world_load(function(block) bb.log(("IN_WORLD 0x%08x"):format(block)) end)'
+$markerSource = Join-Path $env:TEMP "bb-game-world-$PID-$marker"  # written once the run is sure to go ahead
 # What the run puts in place: the file to copy, and where it goes.
 $placed = New-Object System.Collections.ArrayList
 foreach ($p in $Plugins) { [void]$placed.Add([pscustomobject]@{ From = $p; To = Join-Path "$root\plugins" (Split-Path $p -Leaf) }) }
@@ -119,6 +118,8 @@ try {
     }
     $backedUp = $true
     "save backed up to $backup (it is put back at the end; if this run is cut short, copy it back)"
+    # The marker: written here, inside the try, so the finally always removes it (tool-faf0911-N1).
+    Set-Content -Path $markerSource -Encoding ascii -Value 'bb.on_world_load(function(block) bb.log(("IN_WORLD 0x%08x"):format(block)) end)'
     foreach ($pair in $placed) {
         $source = $pair.From; $target = $pair.To
         $dir = Split-Path $target
