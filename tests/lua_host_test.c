@@ -696,8 +696,8 @@ int main(int argc, char **argv) {
         /* tool-f91e77f-F1: the launcher's switch for all mods (BB_MODS_ENABLED). run.py applies
          * mods' files unless it's set to something other than 1; their scripts follow it, and the
          * player's own scripts still load. */
-        static const char *const off_values[] = {"0", "yes"};
-        for (int i = 0; i < 2; ++i) {
+        static const char *const off_values[] = {"0", "yes", "" /* set but empty, as run.py: off (tool-ea15752-N1) */};
+        for (int i = 0; i < 3; ++i) {
             SetEnvironmentVariableA("BB_MODS_ENABLED", off_values[i]);
             char tag[32];
             snprintf(tag, sizeof tag, "modsoff%d", i);

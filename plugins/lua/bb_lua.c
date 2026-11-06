@@ -961,9 +961,13 @@ static void load_mods(const char *mods_dir) {
     if (!mods_dir || !*mods_dir) return;
     /* The launcher's switch for all mods (Installed mods), BB_MODS_ENABLED: run.py applies mods'
      * files unless it's set to something other than 1, and their scripts follow it (tool-f91e77f-F1). */
+    /* A variable set to "" returns 0 like a missing one; only GetLastError tells them apart, and
+     * run.py reads "" as off (tool-ea15752-N1). */
     char mods_on[8];
+    SetLastError(ERROR_SUCCESS);
     const DWORD set = GetEnvironmentVariableA("BB_MODS_ENABLED", mods_on, sizeof mods_on);
-    if (set && (set >= sizeof mods_on || strcmp(mods_on, "1"))) {
+    const int missing = !set && GetLastError() == ERROR_ENVVAR_NOT_FOUND;
+    if (!missing && (set >= sizeof mods_on || strcmp(set ? mods_on : "", "1"))) {
         g_api->log("mods are turned off (BB_MODS_ENABLED is not 1): no mod's scripts are loaded");
         return;
     }
