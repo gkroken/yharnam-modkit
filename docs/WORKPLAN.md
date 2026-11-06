@@ -238,20 +238,32 @@ rebuild.
 The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`scripts/emevd.py`,
 `scripts/esd.py`), but only for its built-in features. Open this to mods.
 
-- [ ] Edit files are **data only** (TOML or JSON, never code), so installing a mod never runs
-      code from it. See decision 3.
+- [x] Edit files are **data only** (TOML or JSON, never code), so installing a mod never runs
+      code from it. See decision 3. TOML, read with the standard library's `tomllib` (port
+      `scripts/script_edits.py`).
 - [ ] Event edits (`event/*.emevd.edit.toml`): add or replace events and insert
       `InitializeEvent`, using named instructions (`SetEventFlag(1234, ON)`). Names come from the
       community's Bloodborne instruction tables (to check: DarkScript3's EMEDF for Bloodborne).
+      **Adding events is done:** `mods/<mod>/edits/event/<map>.emevd.edit.toml`, `[[event]]` with
+      `id`, `restart`, `run` (InitializeEvent in event 0) and instructions, by a built-in name or
+      raw (bank, id, typed args). DarkScript3's EMEDF is "All Rights Reserved" (its
+      LICENSES.txt), so it isn't shipped: seven built-in names whose layouts the port's own edits
+      or the game's files prove, and raw for the rest. Replacing an event: not yet.
 - [ ] Talk edits (`script/talk/*.talk.edit.toml`): a few high-level operations only, such as
       "add a menu option to NPC X that runs event Y", not raw state machines.
-- [ ] `prepare.py` applies them to the player's own files, after file mods and in mod order.
-- [ ] Mods ship **edits, not FromSoftware files**. That avoids redistribution problems and lets
+- [x] Applied after file mods and in mod order, from `scripts/mods.py` (which builds the mods'
+      overlay) rather than `prepare.py`: the result is a generated layer on top. The player's
+      files are never changed. A mod whose edit fails is left out with a log line; the start
+      goes on.
+- [x] Mods ship **edits, not FromSoftware files**. That avoids redistribution problems and lets
       two mods edit the same file.
 - [ ] Converters from DarkScript3 and Soulstruct output to edit files, so authors keep their
       tools.
 
 **Done when** two mods each add an event to the same `m*.emevd.dcx`, and both work in game.
+Shown in game (2026-11-06, `game-world.ps1 -Mods`): two mods each added an event to
+`m24_01_00_00.emevd.dcx`, and each set its own flag (12401900, 12401901), as a Lua watcher logged;
+with one mod, only its flag. Talk edits and the converters are still to do.
 
 ## Phase 6: SDK, launcher and docs
 

@@ -5,7 +5,7 @@
 # the log's plugin lines. For checks that need a loaded character, by a person or a coding agent.
 #
 #   powershell -ExecutionPolicy Bypass -File tools/game-world.ps1 [-Install <port tree>]
-#       [-Plugins a.dll,b.dll] [-Scripts my.lua,other.lua] [-Ini my-plugins.ini]
+#       [-Plugins a.dll,b.dll] [-Scripts my.lua,other.lua] [-Ini my-plugins.ini] [-Mods a,b]
 #       [-Seconds 40] [-Keys F6,G] [-KeyHoldMs 120] [-Shot shot.png] [-ShotAfter 2]
 #
 # - -Install: the port source tree to run (its run.py, out\, user\). Default: the port\ folder
@@ -14,6 +14,9 @@
 # - -Plugins: DLLs copied into <install>\plugins for the run. -Scripts: Lua files copied into
 #   <user>\plugins\lua. -Ini: a file used as <user>\plugins.ini. A file of the same name already
 #   there is set aside and put back afterwards.
+# - -Mods: mod folders (game files, scripts\*.lua, edits\event\*.emevd.edit.toml), copied into a
+#   mods folder of the run's own, on in the order given. The player's own mods and mods.json
+#   aren't used or touched: BB_MODS_DIR, BB_MODS_CONFIG and BB_MODS_ENABLED point at the run's.
 # - "In the world" is a log line containing IN_WORLD. The runner adds a Lua script of its own that
 #   logs it when the world loads, so bb_lua.dll must load: one in -Plugins or <install>\plugins,
 #   else -LuaHost (default: ..\bin\bb_lua.dll beside this script, as in the SDK, else this
@@ -29,6 +32,7 @@
 # - The dump: BB_GAME_DIR, else C:/games/Bloodborne/game. Python: -Python, else the per-user
 #   python.org 3.13. <user> is BB_USER_DIR, else <install>\user.
 param([string]$Install = '', [string[]]$Plugins = @(), [string[]]$Scripts = @(), [string]$Ini = '',
+      [string[]]$Mods = @(),
       [string]$LuaHost = '', [int]$Seconds = 40, [string[]]$Keys = @(), [int]$KeyHoldMs = 120,
       [string]$Shot = '', [int]$ShotAfter = 2, [string]$Log = "$env:TEMP\bb-game-world.log",
       [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe")
@@ -40,10 +44,16 @@ $user = if ($env:BB_USER_DIR) { $env:BB_USER_DIR } else { "$root\user" }
 $Plugins = @($Plugins | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 $Scripts = @($Scripts | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 $Keys = @($Keys | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+$Mods = @($Mods | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 foreach ($k in $Keys) { if ($k -notmatch '^(F([1-9]|1[0-2])|[A-Za-z])$') { throw "-Keys takes F1..F12 and A..Z, not $k" } }
 # Everything is checked before anything is touched.
 foreach ($p in $Plugins + $Scripts) { if (-not (Test-Path $p)) { throw "no file at $p" } }
 if ($Ini -and -not (Test-Path $Ini)) { throw "no file at $Ini" }
+foreach ($m in $Mods) { if (-not (Test-Path $m -PathType Container)) { throw "no mod folder at $m" } }
+$modNames = @($Mods | ForEach-Object { Split-Path (Resolve-Path $_).Path -Leaf })
+$twice = $modNames | Group-Object { $_.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 } | Select-Object -First 1
+if ($twice) { throw "two mods named $($twice.Name): a mods folder holds one of each name" }
+$runMods = Join-Path $env:TEMP "bb-game-world-mods-$PID"  # made inside the try, removed in the finally
 if (-not (Test-Path "$user\savedata")) { throw "no save at $user\savedata: start the game once and make a character" }
 $hasLua = ($Plugins | Where-Object { (Split-Path $_ -Leaf) -eq 'bb_lua.dll' }) -or (Test-Path "$root\plugins\bb_lua.dll")
 if (-not $hasLua) {
@@ -132,6 +142,14 @@ try {
         Copy-Item $source $target
         $copied += $target
     }
+    if ($Mods) {
+        New-Item -ItemType Directory "$runMods\mods" | Out-Null
+        foreach ($m in $Mods) { Copy-Item -Recurse (Resolve-Path $m).Path "$runMods\mods" }
+        $settings = [pscustomobject]@{ order = [string[]]$modNames; disabled = [string[]]@() } | ConvertTo-Json -Compress
+        [System.IO.File]::WriteAllText("$runMods\mods.json", $settings)
+        $env:BB_MODS_DIR = "$runMods\mods"; $env:BB_MODS_CONFIG = "$runMods\mods.json"; $env:BB_MODS_ENABLED = '1'
+        "mods for this run, in order: $($modNames -join ', ')"
+    }
     if (-not $env:BB_GAME_DIR) { $env:BB_GAME_DIR = 'C:/games/Bloodborne/game' }
     Start-Process -FilePath $Python -ArgumentList "`"$root\run.py`"" -WorkingDirectory $root -RedirectStandardOutput $Log `
         -RedirectStandardError "$Log.err" -WindowStyle Hidden | Out-Null
@@ -197,5 +215,7 @@ try {
         if (-not (Get-ChildItem $m -Force -ErrorAction SilentlyContinue)) { Remove-Item $m -ErrorAction SilentlyContinue }
     }
     Remove-Item -Force $markerSource -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force $runMods -ErrorAction SilentlyContinue
 }
-Select-String -Path $Log -Pattern '^Plugin|^Plugins|Engine hooks|Fault|exception 0x' | ForEach-Object { $_.Line }
+Select-String -Path $Log, "$Log.err" -Pattern '^Plugin|^Plugins|Engine hooks|Fault|exception 0x|^Script edits|^Mods:' |
+    ForEach-Object { $_.Line }

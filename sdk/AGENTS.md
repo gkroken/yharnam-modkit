@@ -25,6 +25,9 @@ Prefer Lua. It needs no build, a mistake stops only that script, and it reloads 
    powershell -ExecutionPolicy Bypass -File tools/game-world.ps1 -Install <port tree> `
        -Scripts my.lua [-Plugins my.dll] [-Ini my-plugins.ini] [-Keys F6,G] [-Shot shot.png]
    ```
+   `-Mods mods/<mod>` runs whole mod folders instead (their files, `scripts/` and `edits/`); a
+   mod's event edits (`edits/event/*.emevd.edit.toml`, `docs/GUIDE.md` section 6) report as
+   `Script edits:` lines.
    It backs up the save, loads the character, presses the keys (F1..F12, A..Z), prints every
    `Plugin`/`Plugins` log line and puts everything back. It needs the game's window in front and
    moves the mouse, so tell the person before you start it.

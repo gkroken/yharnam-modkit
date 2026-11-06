@@ -27,6 +27,7 @@ and `PLUGINS.md` (the native API as this host provides it, plugins.ini, the rule
 | The Lua host, `bin\bb_lua.dll` from this SDK | the same `plugins` folder |
 | Your own Lua scripts | `<user>\plugins\lua\*.lua` |
 | A mod's Lua scripts | `mods\<mod>\scripts\*.lua`, named `<mod>/<file>` |
+| A mod's event edits | `mods\<mod>\edits\event\<map>.emevd.edit.toml` (section 6) |
 | Switches and options | `<user>\plugins.ini` (the launcher's Mods & Patches > Plugins and scripts page sets the switches) |
 | What happened | the launcher's Log page, or `<user>\last_run.log` |
 
@@ -77,7 +78,8 @@ banner = Fear the old blood
   powershell -ExecutionPolicy Bypass -File tools\game-world.ps1 -Install <install> `
       -Scripts mods\first_light\scripts\main.lua -Keys F6 -Shot shot.png
   ```
-  `-Plugins` adds DLLs, `-Ini` a plugins.ini for the run. A script given with `-Scripts` runs from
+  `-Plugins` adds DLLs, `-Ini` a plugins.ini for the run, and `-Mods mods\a,mods\b` whole mod
+  folders (files, scripts and edits), on in that order, instead of your own mods for that run. A script given with `-Scripts` runs from
   `<user>\plugins\lua`, so it's named after its file for that run (`main`, its section `[main]`),
   not `first_light/main`. Two files with one name (two mods' `main.lua`) can't go in one run: the
   runner says so and stops.
@@ -98,7 +100,44 @@ The API names the game's things; you still need to know which thing.
 - **Characters:** `bb.chr.list()` gives everyone loaded, with their HP, model and position.
 - **SpEffects** (buffs and states) are rows of `SpEffectParam`: `bb.effect.apply(id)` on the player.
 
-## 6. Native plugins
+## 6. Event edits (no code)
+
+The game's maps run event scripts (`event\<map>.emevd.dcx`): "when this flag turns on, open that
+door". A mod can add events to them with an edit file, which is data: nothing in it runs as code,
+and the player's own copy of the game is never changed.
+
+- **Where:** `mods\<mod>\edits\event\m24_01_00_00.emevd.edit.toml` edits
+  `event\m24_01_00_00.emevd.dcx` (Central Yharnam). `examples\mods\event_flag\` is one, with the
+  Lua script that shows it working.
+- **What:** each `[[event]]` adds an event:
+
+  ```toml
+  [[event]]
+  id = 12415990                  # new: no event file of the game may have it
+  restart = "restart"            # optional: default, restart or end (what resting does to it)
+  run = true                     # optional (true): the map starts it when it loads
+  instructions = [
+      "IfEventFlag(MAIN, ON, EventFlag, 12400131)",   # wait for a flag
+      "SetEventFlag(12401900, ON)",
+      { bank = 1001, id = 0, args = ["f32:2.0"] },    # any instruction, raw
+  ]
+  ```
+- **Instructions by name:** `IfConditionGroup`, `IfEventFlag`, `EndUnconditionally`,
+  `EndIfEventFlag`, `SetEventFlag`, `AwardItemLot`, `WarpPlayerToRespawnPoint`, with their enum
+  names (`ON`/`OFF`/`CHANGE`, `MAIN`, `AND_01`, `OR_01`, `PASS`/`FAIL`, `End`/`Restart`,
+  `EventFlag`). **Any other instruction raw:** its bank and id and typed arguments (`u8`, `s8`,
+  `u16`, `s16`, `u32`, `s32`, `f32`), in order, from the community's Bloodborne instruction list
+  (DarkScript3's, at soulsmods.github.io/emedf/bb-emedf.html).
+- **Several mods can edit one file:** their events go in, in mod order, on top of any mod that
+  replaces that file. A mod whose edit doesn't work is left out whole, with a `Script edits:` line
+  saying why, and the game starts without it.
+- **Pick ids nobody uses:** an event id no event file has, and flags no event sets. Don't count on
+  a flag being off when the map loads (the game may keep it in the save): set it yourself first,
+  as the example does.
+- **Test it** with `game-world.ps1 -Mods mods\<mod>`, and a Lua script that logs the flags your
+  event sets (`bb.flag.on`), as the example does.
+
+## 7. Native plugins
 
 Use C when Lua can't do it: hooks on the game's functions, calls into the game, raw memory.
 
@@ -126,10 +165,11 @@ Use C when Lua can't do it: hooks on the game's functions, calls into the game, 
   name in your Binary Ninja database, bbhost's engine headers, a debugger). The next person to
   read it, or you after the next game update, will need it.
 
-## 7. Sharing a mod
+## 8. Sharing a mod
 
-- **A Lua mod** is a folder: `mods\<mod>\scripts\*.lua`, beside any files it replaces. Players drop
-  it in `mods\`; the launcher's Installed mods page turns it on and off, and its order.
+- **A mod** is a folder: `mods\<mod>\scripts\*.lua` and `mods\<mod>\edits\`, beside any files it
+  replaces (any of the three alone is a mod too). Players drop it in `mods\`; the launcher's
+  Installed mods page turns it on and off, and its order.
 - **A plugin** is its DLL (and a folder of its own for any DLLs it needs). Players put it in
   `<user>\plugins\`.
 - **Ship your own code only:** no game files and no bytes copied from the game. To recognise game
@@ -137,7 +177,7 @@ Use C when Lua can't do it: hooks on the game's functions, calls into the game, 
 - **The license:** the plugin API is GPL-3.0-or-later, so a plugin built against it is shared under
   the GPL with its source. Lua scripts are yours to license, but sharing them openly helps everyone.
 
-## 8. When it doesn't work
+## 9. When it doesn't work
 
 | You see | It means |
 |---|---|
@@ -147,4 +187,6 @@ Use C when Lua can't do it: hooks on the game's functions, calls into the game, 
 | `left out, changes the game, and this is online play` | online play leaves gameplay plugins out |
 | `Plugin lua: <script>: stopped: <why>` | your script's error, with its line number |
 | `mod <mod> is disabled (mods.json)` | the mod is off in the launcher, and its scripts with it |
+| `Script edits: <mod>: <file>: <why>; left out` | that mod's event edit isn't applied (a name, a value or an id it gives); the others are |
+| `Script edits: ... is not in the game` | the edit file's name doesn't match an event file (`event\<map>.emevd.dcx`) |
 | A hook or patch refused | the bytes there aren't what you passed: wrong address, not 1.09, or bytes from `eboot.elf` |

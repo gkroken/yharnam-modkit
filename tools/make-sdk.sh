@@ -136,11 +136,21 @@ if cmake -G Ninja -S "$(win "$work/lost")" -B "$(win "$work/lost-build")" -DCMAK
 fi
 
 # Only these kinds of file: sources, docs, build files and the one DLL. A game file has no place.
-bad=$(cd "$pkg" && find . -type f | grep -vE '\.(c|h|lua|md|cmake)$|^\./tools/game-world\.ps1$|/(CMakeLists\.txt|LICENSE|VERSION)$|^\./bin/bb_lua\.dll$')
+bad=$(cd "$pkg" && find . -type f | grep -vE '\.(c|h|lua|md|cmake)$|^\./tools/game-world\.ps1$|/(CMakeLists\.txt|LICENSE|VERSION)$|^\./bin/bb_lua\.dll$|^\./examples/mods/[^/]+/edits/event/[^/]+\.emevd\.edit\.toml$')
 [[ -z $bad ]] || fail "unexpected files in the package: $(echo $bad)"
+# The example mods' event edits must be ones the port applies: its own parser reads each.
+edits=0
+for edit in "$pkg"/examples/mods/*/edits/event/*.emevd.edit.toml; do
+    [[ -f $edit ]] || continue
+    edits=$((edits + 1))
+    if ! "$python" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import script_edits
+script_edits.parse(open(sys.argv[2], encoding="utf-8-sig").read())'             "$(win "$root/port/scripts")" "$(win "$edit")" > "$work/edit-$edits.log" 2>&1; then
+        fail "${edit#"$pkg"/} is not an edit the port applies: $(tail -1 "$work/edit-$edits.log")"
+    fi
+done
 listed=$("$python" -I -c 'import sys, zipfile; print(len(zipfile.ZipFile(sys.argv[1]).namelist()))' "$(win "$out/$name.zip")")
 files=$(find "$pkg" -type f | wc -l)
 [[ $listed == "$files" ]] || fail "the zip holds $listed files, the package $files"
 
 if (( failed )); then echo "SDK check: $failed problem(s)"; exit 1; fi
-echo "SDK check: out/sdk/$name.zip ($files files, $(head -3 "$pkg/VERSION" | tr '\n' ' ')) builds $(ls "$pkg"/examples/c | wc -l) examples, the template and bb_lua the same again"
+echo "SDK check: out/sdk/$name.zip ($files files, $(head -3 "$pkg/VERSION" | tr '\n' ' ')) builds $(ls "$pkg"/examples/c | wc -l) examples, the template and bb_lua the same again; $edits example edit file(s) parse"

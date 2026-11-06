@@ -21,7 +21,8 @@ have it yet, so a plugin or script put beside one of those does nothing.
 | `template/` | A plugin of your own to start from: `my_plugin.c` and its `CMakeLists.txt`. |
 | `examples/c/` | Example plugins: `hello`, `frame_hook` (a hook and a patch), `flag_buff`, `weapon_tweak`. |
 | `examples/lua/` | Example scripts: a flag-triggered buff, a weapon tweak, a lamp notification. |
-| `tools/game-world.ps1` | Runs the game with your plugins, scripts and plugins.ini, loads your character, presses keys, takes a picture and prints the plugin log lines; puts the save and every file back afterwards. For you, or a coding agent, to test a mod in the world: `-Install <port tree>` (see the script's header). |
+| `examples/mods/` | Example mods: `event_flag`, an event added to Central Yharnam's event script (data, no code) and the Lua script that shows it running. |
+| `tools/game-world.ps1` | Runs the game with your plugins, scripts and plugins.ini, loads your character, presses keys, takes a picture and prints the plugin log lines; puts the save and every file back afterwards. For you, or a coding agent, to test a mod in the world: `-Install <port tree>`, `-Mods` for whole mod folders (see the script's header). |
 | `cmake/` | `bb-clang-mingw.cmake` (the toolchain file) and `BloodbornePlugin.cmake` (`bb_add_plugin`). |
 | `src/bb_lua/` | The source of `bin/bb_lua.dll`: `bb_lua.c` and Lua 5.4.7 (with its one patch, in `lstrlib.c`). |
 | `VERSION` | Which plugin API and which source revision this package was made from. |

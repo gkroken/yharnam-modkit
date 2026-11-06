@@ -1,0 +1,16 @@
+# event_flag: an event this mod adds to Central Yharnam's event script
+# (event/m24_01_00_00.emevd.dcx). Each time the map loads, it turns flag 12401900 off, waits two
+# seconds and turns it on again; the mod's scripts/main.lua shows a banner when it does.
+# Event 12415990 and flag 12401900 are in none of the game's event files.
+#
+# Instructions are built-in names (docs/GUIDE.md, Event edits) or raw: bank, id and typed
+# arguments, as the WAIT below is (1001:0, "WAIT Fixed Time (Seconds)", one f32).
+
+[[event]]
+id = 12415990
+restart = "restart"   # resting at a lamp runs it again
+instructions = [
+    "SetEventFlag(12401900, OFF)",
+    { bank = 1001, id = 0, args = ["f32:2.0"] },
+    "SetEventFlag(12401900, ON)",
+]
