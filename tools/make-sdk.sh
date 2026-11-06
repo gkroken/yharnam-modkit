@@ -54,9 +54,10 @@ build() {  # build <build dir> <source dir> [cmake args...]: configure and build
 
 # The package.
 rm -rf "$pkg" "$out/$name.zip" "$work"
-mkdir -p "$pkg"/{include,bin,docs,examples/c,examples/lua,src/bb_lua} "$work"
+mkdir -p "$pkg"/{include,bin,docs,examples/c,examples/lua,src/bb_lua,tools} "$work"
 cp -r "$root/sdk/." "$pkg/"
 cp "$root/LICENSE" "$pkg/"
+cp "$root/tools/game-world.ps1" "$pkg/tools/"  # the in-world runner: -Install <port tree>
 cp "$header" "$pkg/include/"
 cp "$root/port/docs/PLUGINS.md" "$root/docs/LUA.md" "$pkg/docs/"
 for dir in "$root"/plugins/examples/*/; do
@@ -135,7 +136,7 @@ if cmake -G Ninja -S "$(win "$work/lost")" -B "$(win "$work/lost-build")" -DCMAK
 fi
 
 # Only these kinds of file: sources, docs, build files and the one DLL. A game file has no place.
-bad=$(cd "$pkg" && find . -type f | grep -vE '\.(c|h|lua|md|cmake)$|/(CMakeLists\.txt|LICENSE|VERSION)$|^\./bin/bb_lua\.dll$')
+bad=$(cd "$pkg" && find . -type f | grep -vE '\.(c|h|lua|md|cmake)$|^\./tools/game-world\.ps1$|/(CMakeLists\.txt|LICENSE|VERSION)$|^\./bin/bb_lua\.dll$')
 [[ -z $bad ]] || fail "unexpected files in the package: $(echo $bad)"
 listed=$("$python" -I -c 'import sys, zipfile; print(len(zipfile.ZipFile(sys.argv[1]).namelist()))' "$(win "$out/$name.zip")")
 files=$(find "$pkg" -type f | wc -l)
