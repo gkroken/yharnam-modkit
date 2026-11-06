@@ -144,8 +144,11 @@ If you write events in DarkScript3, convert them instead of typing the edit file
 
 ```
 python <install>\scripts\script_convert.py m24_01_00_00.emevd.js `
-    --emedf <DarkScript3>\Resources\bb-common.emedf.json --events 12415990,12415991 > edit.toml
+    --emedf <DarkScript3>\Resources\bb-common.emedf.json --events 12415990,12415991 `
+    --out mods\<mod>\edits\event\m24_01_00_00.emevd.edit.toml
 ```
+`--out` writes the file as UTF-8. (Edit files in UTF-16, as Windows PowerShell's `>` and
+Notepad's "Unicode" save them, are read too.)
 The `.js` is DarkScript3's text of the map's event file with your events added (and, to have the
 map start one, `InitializeEvent(0, <id>, 0)` in event 0). Only the events you name are converted;
 every instruction comes out raw, with your line beside it as a comment, so the edit file needs
