@@ -105,6 +105,11 @@ if build "$work/examples" "$pkg"; then
     for dir in "$pkg"/examples/c/*/; do dll_ok "$work/examples/$(basename "$dir").dll"; done
 fi
 build "$work/template" "$pkg/template" && dll_ok "$work/template/my_plugin.dll"
+# The README's strict C11 switch must build the template too.
+if build "$work/template-c11" "$pkg/template" -DCMAKE_C_EXTENSIONS=OFF; then
+    grep -q -- '-std=c11' "$work/template-c11/build.ninja" || fail "template-c11: -DCMAKE_C_EXTENSIONS=OFF did not give -std=c11"
+    dll_ok "$work/template-c11/my_plugin.dll"
+fi
 cp -r "$pkg/template" "$work/mine"
 build "$work/mine-build" "$work/mine" -DBB_SDK_DIR="$(win "$pkg")" && dll_ok "$work/mine-build/my_plugin.dll"
 

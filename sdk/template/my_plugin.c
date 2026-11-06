@@ -11,6 +11,7 @@
  * Rename it in bb_plugin_info and in CMakeLists.txt. The API is include/bbhost_plugin.h. */
 #include "bbhost_plugin.h"
 
+#define _USE_MATH_DEFINES /* M_PI under strict C11 (-DCMAKE_C_EXTENSIONS=OFF) too */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
