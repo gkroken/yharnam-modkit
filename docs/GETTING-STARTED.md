@@ -58,6 +58,10 @@ Every call is listed in `docs/LUA.md`. To ship scripts with a mod, put them in
 Start from `plugins/examples/hello/hello.c` (the smallest plugin) or `frame_hook/frame_hook.c` (a
 hook and a patch). Add a folder under `plugins/examples/`, and `build-plugins.sh` builds it.
 
+For a plugin of your own outside this tree, use the SDK: `bash tools/make-sdk.sh` makes
+`out/sdk/bloodborne-plugin-sdk-api<N>.zip`, whose `template/` builds with CMake and Ninja
+(its README says how). That zip is what a modder without this repository needs.
+
 - **The API:** `port/include/bbhost_plugin.h`.
 - **What this host provides,** and how it differs from bbhost: `port/docs/PLUGINS.md`.
 - **Build with clang or MinGW:** callbacks the game calls directly need the System V calling

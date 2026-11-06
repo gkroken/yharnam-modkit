@@ -255,8 +255,12 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
 
 ## Phase 6: SDK, launcher and docs
 
-- [ ] Release package: `sdk/` (headers, a CMake toolchain file for clang, example plugins and
-      Lua scripts).
+- [x] Release package: `bash tools/make-sdk.sh` makes `out/sdk/bloodborne-plugin-sdk-api<N>.zip`
+      from `sdk/` (README, CMake toolchain file for clang, `bb_add_plugin`, a template), the
+      header, the C and Lua examples, the docs, and `bb_lua.dll` with its whole source (GPL). The
+      gate's `--check` builds the unpacked package on its own (examples, template, bb_lua from
+      its source, which then passes lua-host-test) and holds every DLL to Windows' own imports.
+      In the world, the template built from the package showed HP and position on F6.
 - [ ] The launcher's Mods page lists plugins and scripts with toggles and load errors, read from
       `bb_plugin_info`.
 - [ ] Modder guide: `docs/plugins.md` and `docs/lua.md`, and the address conventions (Binary Ninja

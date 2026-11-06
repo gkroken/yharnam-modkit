@@ -15,12 +15,12 @@ while the game plays, not only replace files.
 |---|---|
 | `port/` | yharnam-pc submodule: our fork `gkroken/yharnam-pc`, branch `plugins` (upstream 2.3.2 plus the plugin host; the guide is `port/docs/PLUGINS.md`) |
 | `docs/` | The getting-started guide, the Lua reference, the plan and the research |
-| `sdk/` | *(Phase 2)* plugin headers and the clang toolchain file |
+| `sdk/` | The SDK package's own files: its README, the CMake toolchain file and `bb_add_plugin`, and a plugin template. `bash tools/make-sdk.sh` makes the package (`out/sdk/*.zip`) with the header, examples, docs and `bb_lua.dll` added. |
 | `plugins/examples/` | Example plugins (`hello`, `frame_hook`, `flag_buff`, `weapon_tweak`). `bash tools/build-plugins.sh --install` builds them into `port/plugins/`. |
 | `plugins/lua/` | `bb_lua`, the Lua script host (`docs/LUA.md`), and example scripts in `examples/`. |
 | `third_party/lua-5.4.7/` | Lua's library sources, unchanged (MIT). |
 | `tests/` | The tool's own tests (the Lua host against a fake host), run by `tools/test-port.sh`. |
-| `tools/` | `test-port.sh` (the test gate, against `test-baseline.txt`), `build-plugins.sh`, and `game-world.ps1` (in-game checks with a loaded character). |
+| `tools/` | `test-port.sh` (the test gate, against `test-baseline.txt`), `build-plugins.sh`, `make-sdk.sh`, and `game-world.ps1` (in-game checks with a loaded character). |
 
 Clone with `git clone --recursive`, or run `git submodule update --init --recursive`.
 
