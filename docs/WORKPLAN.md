@@ -273,7 +273,13 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
       addresses, sharing, troubleshooting), beside `LUA.md` and `PLUGINS.md`; `AGENTS.md` (and a
       `CLAUDE.md` importing it) for coding agents; `tools/game-world.ps1` to test in the world.
       Released yharnam-pc packages have no plugin host yet: a mod needs a build of this fork.
-- [ ] CI: build the fork and the examples, and run the host-side tests.
+- [ ] CI: build the fork and the examples, and run the host-side tests. The fork's part is
+      written: port `.github/workflows/plugins.yml` (windows-latest, MSYS2 CLANG64) runs
+      `bash build.sh`, the C tests of what the plugins branch adds or hooks (plugin-host,
+      flag-delivery, game-state, params, text, input-take, engine-hooks, input-bindings) and the
+      Python `test_launcher_plugins` and `test_paramdefs`. Not yet green on GitHub. The examples,
+      SDK and Lua host live in this repository, which isn't on GitHub: CI can't build them until
+      the user decides to publish it (the gate builds them locally meanwhile).
 
 ## Phase 7: Upstream
 
