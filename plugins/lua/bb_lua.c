@@ -46,6 +46,7 @@ typedef struct {
     int spent;            /* the budget ran out in this call: every instruction raises until it ends */
     int on;
     int told_online;      /* its first refused change in online play was logged */
+    int told_warp;        /* its first warp refused for want of a grant was logged */
     uint32_t take_keys[16];  /* bb.input.take: its keys (scancode bits), buttons, wheel, motion */
     uint32_t take_buttons;
     int take_wheel, take_motion;
@@ -321,6 +322,58 @@ static int l_effect_has(lua_State *L) {
     return 1;
 }
 
+/* Warps need three things: not online play; the script's own grant in plugins.ini
+ * ([warps] <script name> = 1, so a downloaded mod's script can't move the player because some
+ * other script was allowed to); and the host's grant to the Lua host ([warps] lua = 1), which
+ * the host checks itself. 1 (and false pushed) when refused here. */
+static int refused_warp(lua_State *L, const char *call) {
+    if (refused_online(L, call)) return 1;
+    Script *s = script_of(L);
+    char *key = malloc(strlen(s->name) + 8);
+    if (!key) return luaL_error(L, "out of memory");
+    sprintf(key, "warps.%s", s->name);
+    const char *v = g_api->config(key);
+    free(key);
+    if (!_stricmp(v, "1") || !_stricmp(v, "true") || !_stricmp(v, "on")) return 0;
+    if (!s->told_warp) {
+        s->told_warp = 1;
+        g_api->log("%s: %s refused: this script may warp only with \"%s = 1\" under [warps] in plugins.ini "
+                   "(and \"lua = 1\" there for the Lua host)", s->name, call, s->name);
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
+/* bb.warp.to(x, y, z[, yaw[, block]]) -> true when queued: the player moves there at the start
+ * of the next frame, in its own block (or a resident one, as bb.player.block packs it), facing
+ * yaw (radians; the current facing when left out). */
+static int l_warp_to(lua_State *L) {
+    float xyz[3] = {(float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3)};
+    float yaw = 0.0f, here[3];
+    if (lua_isnoneornil(L, 4)) {
+        if (g_api->player_position(here, &yaw)) {
+            lua_pushboolean(L, 0);  /* no player */
+            return 1;
+        }
+    } else {
+        yaw = (float)luaL_checknumber(L, 4);
+    }
+    const uint32_t block = (uint32_t)luaL_optinteger(L, 5, 0);
+    if (refused_warp(L, "bb.warp.to")) return 1;
+    lua_pushboolean(L, !g_api->player_warp(block, xyz, yaw));
+    return 1;
+}
+
+/* bb.warp.lamp(return_point) -> true when queued: travel to a lamp, a full load, by its
+ * ReturnPointParam row (the lamp's entity id + 1000: 2412951 is Central Yharnam's). */
+static int l_warp_lamp(lua_State *L) {
+    const lua_Integer rp = luaL_checkinteger(L, 1);
+    luaL_argcheck(L, rp > 0 && rp <= INT32_MAX, 1, "a ReturnPointParam row");
+    if (refused_warp(L, "bb.warp.lamp")) return 1;
+    lua_pushboolean(L, !g_api->lamp_warp((int32_t)rp));
+    return 1;
+}
+
 /* bb.chr.list() -> {{ins=, handle=, npc=, model=, hp=, max_hp=, team=, type=, player=, x=, y=, z=}, ...}
  * or nil before the world exists. The main player first. Use within the frame. */
 static int l_chr_list(lua_State *L) {
@@ -450,6 +503,7 @@ static const luaL_Reg FLAG[] = {{"get", l_flag_get}, {"set", l_flag_set}, {"on",
 static const luaL_Reg PARAM[] = {{"get", l_param_get}, {"set", l_param_set}, {"ids", l_param_ids}, {NULL, NULL}};
 static const luaL_Reg PLAYER[] = {{"stat", l_player_stat}, {"position", l_player_position}, {"block", l_player_block}, {NULL, NULL}};
 static const luaL_Reg EFFECT[] = {{"apply", l_effect_apply}, {"has", l_effect_has}, {NULL, NULL}};
+static const luaL_Reg WARP[] = {{"to", l_warp_to}, {"lamp", l_warp_lamp}, {NULL, NULL}};
 static const luaL_Reg CHR[] = {{"list", l_chr_list}, {NULL, NULL}};
 static int l_input_down(lua_State *L);
 static int l_input_pressed(lua_State *L);
@@ -510,7 +564,7 @@ static void open_sandbox(lua_State *L) {
     static const struct {
         const char *name;
         const luaL_Reg *fns;
-    } groups[] = {{"flag", FLAG}, {"param", PARAM}, {"player", PLAYER}, {"effect", EFFECT}, {"chr", CHR}, {"input", INPUT_FNS}};
+    } groups[] = {{"flag", FLAG}, {"param", PARAM}, {"player", PLAYER}, {"effect", EFFECT}, {"chr", CHR}, {"input", INPUT_FNS}, {"warp", WARP}};
     /* Argument errors name the function from the loaded-modules table: listing bb and its parts
      * there makes them say "bb.effect.has" (tool-9bb9566-N1). Scripts can't reach the table. */
     luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_LOADED_TABLE);

@@ -50,6 +50,9 @@ static void host_log(const char *fmt, ...) {
 static const char *host_config(const char *key) {
     if (!strcmp(key, "a_good.greeting")) return "hello from plugins.ini";
     if (!strcmp(key, "alpha/main.colour")) return "red";
+    if (!strcmp(key, "warps.warper") || !strcmp(key, "warps.warper2") || !strcmp(key, "warps.warper3"))
+        return "1";                                         /* granted */
+    if (!strcmp(key, "warps.warper_no")) return "0";     /* said no */
     if (!strcmp(key, LONG_ON "/main.colour")) return "green";
     return "";
 }
@@ -193,6 +196,25 @@ static int host_replace_text(const BbText *texts, size_t count) {
     for (; texts[0].text[i] && i < 63; ++i) g_text_utf16[i] = texts[0].text[i];
     g_text_utf16[i] = 0;
     return 2 * (int)count;
+}
+/* Warps the fake host got, and its own [warps] lua grant (the host's check, faked). */
+static int g_warp_calls, g_lamp_calls, g_host_grants_lua = 1;
+static float g_warp_xyz[3], g_warp_yaw;
+static uint32_t g_warp_block;
+static int32_t g_lamp_rp;
+static int host_player_warp(uint32_t block, const float xyz[3], float yaw) {
+    if (!g_host_grants_lua) return 1;
+    ++g_warp_calls;
+    memcpy(g_warp_xyz, xyz, sizeof g_warp_xyz);
+    g_warp_yaw = yaw;
+    g_warp_block = block;
+    return 0;
+}
+static int host_lamp_warp(int32_t rp) {
+    if (!g_host_grants_lua) return 1;
+    ++g_lamp_calls;
+    g_lamp_rp = rp;
+    return 0;
 }
 static int g_loading_now;
 static int host_loading(void) { return g_loading_now; }
@@ -468,6 +490,8 @@ int main(int argc, char **argv) {
     api.input_take = host_input_take;
     api.loading_screen = host_loading;
     api.replace_text = host_replace_text;
+    api.player_warp = host_player_warp;
+    api.lamp_warp = host_lamp_warp;
 
     CHECK(image(&api) == 0 && g_frame);
     /* Loading: the good ones loaded, the syntax error stopped at load, in name order. */
@@ -754,6 +778,44 @@ int main(int argc, char **argv) {
         for (int i = 0; i < 300; ++i) sum += 0x500000 + 2 * i + 'x';
         CHECK(strstr(g_log, "texts: batch 600") && g_replace_calls == 1 && g_text_count == 300 && g_text_sum == sum);
         CHECK(strstr(g_log, "texts: one bad false false false") && strstr(g_log, "texts: empty 0") && g_replace_calls == 1);
+
+        /* Warps: only a script granted in plugins.ini ([warps] warper = 1), never online, and the
+         * host's own grant still applies; yaw defaults to the player's facing. */
+        static const char *const warp_script =
+            "bb.on_frame(function()\n"
+            "  bb.log('to', bb.warp.to(1, 2, 3), bb.warp.to(4, 5, 6, 0.25, 0x18000000), bb.warp.lamp(2412951))\n"
+            "  bb.log('bad', (pcall(bb.warp.lamp, 0)), (pcall(bb.warp.to, 1, 2)))\n"
+            "end)\n";
+        g_warp_calls = g_lamp_calls = 0;
+        CHECK(load_alone(argv[1], "warper", warp_script));
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "warper: to true true true") && strstr(g_log, "warper: bad false false"));
+        CHECK(g_warp_calls == 2 && g_lamp_calls == 1 && g_lamp_rp == 2412951);
+        CHECK(g_warp_xyz[0] == 4.0f && g_warp_yaw == 0.25f && g_warp_block == 0x18000000);
+        CHECK(load_alone(argv[1], "warper_no", warp_script));  /* said no */
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "warper_no: to false false false") && g_warp_calls == 2 && g_lamp_calls == 1);
+        CHECK(count("refused: this script may warp only with") == 1);  /* once per script */
+        CHECK(load_alone(argv[1], "ungranted", warp_script));        /* not listed */
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "ungranted: to false false false") && strstr(g_log, "\"ungranted = 1\" under [warps]"));
+        g_host_grants_lua = 0;                                     /* the host's [warps] lua not set */
+        CHECK(load_alone(argv[1], "warper2", warp_script));
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "warper2: to false false false") && g_warp_calls == 2);
+        g_host_grants_lua = 1;
+        SetEnvironmentVariableA("BB_ONLINE", "1");                  /* online: refused before anything */
+        CHECK(load_alone(argv[1], "warper3", warp_script));
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "warper3: to false false false") && strstr(g_log, "online play") && g_warp_calls == 2 &&
+              g_lamp_calls == 1);
+        SetEnvironmentVariableA("BB_ONLINE", NULL);
 
         /* Other names: kp0 (98), f12 (69), lshift (225). */
         g_input_now.key[98] = g_input_now.key[69] = g_input_now.key[225] = 1;

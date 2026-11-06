@@ -159,10 +159,13 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
   - [x] `player_warp` and `lamp_warp`: bbhost's routines (port a46c5c9). Only for a plugin
         flagged opt-in and gameplay (the player turned it on; online leaves it out). In the
         world: a 3 m move in Central Yharnam, and a lamp travel with its full load.
-  - [ ] Warps for Lua scripts. Open design: bb_lua isn't flagged, so the host refuses it.
-        Choices: a second, opt-in gameplay build of the Lua host for scripts that warp, or a
-        per-script opt-in in plugins.ini that bb_lua checks. Whichever, online play must refuse
-        them too (port-a46c5c9-N1).
+  - [x] Warps for Lua scripts: `bb.warp.to` and `bb.warp.lamp`. The player grants them in
+        plugins.ini: `[warps] lua = 1` for the Lua host (the host checks, port fe2789c) and the
+        script's own name (bb_lua checks), so a downloaded mod's script can't move the player
+        because another was allowed to. Online play refuses them in both places. A second,
+        gameplay-flagged Lua host was the other choice. It was dropped because two hosts would
+        share the one input reader and the one key taker. Run in the world: a move, then a
+        lamp travel.
   - [x] `loading_screen()`: bbhost's reading (port 7383ee0); in Lua as `bb.loading()`. A
         picture while it read 1 shows the loading screen.
   - [x] `on_world_load` (port b148dcb).
@@ -193,12 +196,14 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
   and a probe read 150 back in the world.
 - Since then: `show_message`/`show_text` (port b148dcb), input and `input_take` (c850d52 to
   ad77c97), and `loading_screen` (7383ee0), the warps (a46c5c9) and `replace_text` (128d4b0). Phase 3's API
-  is all in; Lua warps are the one open design (above).
+  is all in, Lua warps included.
 
 ## Phase 4: Lua scripting (`bb_lua.dll`)
 
 - [x] Embed Lua 5.4 as a regular plugin (`plugins/lua`, `bb_lua.dll`; Lua 5.4.7 vendored in
       `third_party/`, checksum-verified), so the port itself stays C and Lua stays optional.
+      Kept vendored (tool-711f289-Q1; the user left the call to us): builds need no download,
+      the version is pinned, and the one patch (lstrlib.c's tick) is in the tree.
 - [x] Scripts come from `<user>\plugins\lua\*.lua` and from `mods\<mod>\scripts\*.lua` (named
       `<mod>/<file>`, skipped when the mod is disabled in mods.json), so a mod ships its scripts
       with its files.
@@ -219,7 +224,7 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
       errors, loops or runs out of memory is stopped alone, with a log line and a banner.
 - [ ] Hot reload with a key (scripts only; hooks stay sealed). Next.
 - [ ] Examples: a flag-triggered buff and a weapon param tweak are in
-      (`plugins/lua/examples/`); a lamp notification waits for the Lua warps decision.
+      (`plugins/lua/examples/`); a lamp notification next.
 
 **Done when** a mod folder holding only `scripts/*.lua` changes gameplay with no DLL and no
 rebuild.
