@@ -329,6 +329,17 @@ static int l_effect_has(lua_State *L) {
 static int refused_warp(lua_State *L, const char *call) {
     if (refused_online(L, call)) return 1;
     Script *s = script_of(L);
+    /* A script named "lua" would share the host's own grant line ([warps] lua): never granted
+     * that way (tool-f6174a2-N1). */
+    if (!_stricmp(s->name, "lua")) {
+        if (!s->told_warp) {
+            s->told_warp = 1;
+            g_api->log("%s: %s refused: a script named \"lua\" can't have a grant of its own ([warps] lua is the "
+                       "Lua host's); rename the file", s->name, call);
+        }
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     char *key = malloc(strlen(s->name) + 8);
     if (!key) return luaL_error(L, "out of memory");
     sprintf(key, "warps.%s", s->name);

@@ -53,6 +53,7 @@ static const char *host_config(const char *key) {
     if (!strcmp(key, "warps.warper") || !strcmp(key, "warps.warper2") || !strcmp(key, "warps.warper3"))
         return "1";                                         /* granted */
     if (!strcmp(key, "warps.warper_no")) return "0";     /* said no */
+    if (!strcmp(key, "warps.lua")) return "1";           /* the host's grant, as the player writes it */
     if (!strcmp(key, LONG_ON "/main.colour")) return "green";
     return "";
 }
@@ -809,6 +810,10 @@ int main(int argc, char **argv) {
         g_frame(g_frame_user);
         CHECK(strstr(g_log, "warper2: to false false false") && g_warp_calls == 2);
         g_host_grants_lua = 1;
+        CHECK(load_alone(argv[1], "lua", warp_script));            /* the host's grant line isn't its own */
+        g_log[0] = 0;
+        g_frame(g_frame_user);
+        CHECK(strstr(g_log, "lua: to false false false") && strstr(g_log, "rename the file") && g_warp_calls == 2);
         SetEnvironmentVariableA("BB_ONLINE", "1");                  /* online: refused before anything */
         CHECK(load_alone(argv[1], "warper3", warp_script));
         g_log[0] = 0;
