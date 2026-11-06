@@ -222,7 +222,10 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
       memory cap per script (docs/LUA.md).
 - [x] Error isolation: each script has its own Lua state and runs under `pcall`. A script that
       errors, loops or runs out of memory is stopped alone, with a log line and a banner.
-- [ ] Hot reload with a key (scripts only; hooks stay sealed). Next.
+- [x] Hot reload with a key: `[lua] reload_key = f8` (off unless set). Every script is closed and
+      loaded again from disk; taken keys go back; `bb.replace_text` keeps the start's text, and a
+      flag watcher needs one from the start (the hook is sealed). In the world: F8 reloaded a
+      script, which took its key again.
 - [x] Examples (`plugins/lua/examples/`): a flag-triggered buff, a weapon param tweak, and a
       lamp notification. lua-host-test runs lamp_notify.lua from the folder; in the world, a
       lamp flag set through the game showed "Lamp lit: Central Yharnam (1 of 4)".

@@ -53,6 +53,7 @@ typedef struct {
 } Script;
 
 static const BbHostApi *g_api;
+static int g_reloading;  /* 1 while a hot reload loads the scripts again: after the image phase */
 static Script g_scripts[MAX_SCRIPTS];
 static int g_count;
 
@@ -205,7 +206,10 @@ static void add_callback(lua_State *L, const char *list, int fn) {
 static int l_flag_on(lua_State *L) {
     luaL_checktype(L, 1, LUA_TFUNCTION);
     if (!g_flags_watched) {
-        if (g_api->on_event_flag(on_flag, NULL)) return luaL_error(L, "flag changes can't be watched (register while loading)");
+        if (g_api->on_event_flag(on_flag, NULL))
+            return luaL_error(L, g_reloading ? "flag changes can't be watched: no script watched them at the "
+                                               "game's start, so the hook isn't there (restart the game)"
+                                             : "flag changes can't be watched (register while loading)");
         g_flags_watched = 1;
     }
     add_callback(L, "bb_flags", 1);
@@ -475,6 +479,12 @@ static int l_replace_text(lua_State *L) {
         }
     } else {
         text_item(L, 1, 2, &items[n++]);
+    }
+    if (g_reloading) {  /* the game runs: what the start replaced stays, and nothing new is */
+        g_api->log("%s: bb.replace_text kept from the start (scripts reloaded; new text needs a restart)",
+                   script_of(L)->name);
+        lua_pushinteger(L, 0);
+        return 1;
     }
     if (!g_loading_scripts) return luaL_error(L, "bb.replace_text works only while the script loads (its top level)");
     const int moved = n ? g_api->replace_text(items, n) : 0;  /* the host keeps its own copies */
@@ -1025,13 +1035,8 @@ static void read_input(void) {
  * "enter", "escape", "tab", "backspace", the arrows, "insert", "delete", "home", "end", "pageup",
  * "pagedown", "lshift", "rshift", "lctrl", "rctrl", "lalt", "ralt", "kp0".."kp9". A number is a
  * scancode as is. */
-static int key_code(lua_State *L, int at) {
-    if (lua_type(L, at) == LUA_TNUMBER) {
-        const lua_Integer code = luaL_checkinteger(L, at);
-        luaL_argcheck(L, code > 0 && code < 512, at, "a scancode is 1..511");
-        return (int)code;
-    }
-    const char *name = luaL_checkstring(L, at);
+/* A key's scancode by name, or -1. */
+static int key_from_name(const char *name) {
     char k[16];
     size_t n = 0;
     for (; name[n] && n < sizeof k - 1; ++n) k[n] = (char)((name[n] >= 'A' && name[n] <= 'Z') ? name[n] + 32 : name[n]);
@@ -1055,7 +1060,19 @@ static int key_code(lua_State *L, int at) {
         for (size_t i = 0; i < sizeof named / sizeof *named; ++i)
             if (!strcmp(k, named[i].name)) return named[i].code;
     }
-    return luaL_argerror(L, at, lua_pushfstring(L, "no key named '%s'", name));
+    return -1;
+}
+
+static int key_code(lua_State *L, int at) {
+    if (lua_type(L, at) == LUA_TNUMBER) {
+        const lua_Integer code = luaL_checkinteger(L, at);
+        luaL_argcheck(L, code > 0 && code < 512, at, "a scancode is 1..511");
+        return (int)code;
+    }
+    const char *name = luaL_checkstring(L, at);
+    const int code = key_from_name(name);
+    if (code < 0) return luaL_argerror(L, at, lua_pushfstring(L, "no key named '%s'", name));
+    return code;
 }
 
 /* bb.input.down(key) -> true while held (the window focused). */
@@ -1256,9 +1273,32 @@ static void on_world(uint32_t block, void *user) {
     dispatch("bb_loads", push_block, &block, 1);
 }
 
+/* Hot reload: [lua] reload_key = f8 in plugins.ini. Off unless set. */
+static int g_reload_key;
+
+static void reload_scripts(void) {
+    g_api->log("reloading the scripts");
+    for (int i = 0; i < g_count; ++i) {
+        Script *s = &g_scripts[i];
+        if (s->L) lua_close(s->L);
+        free(s->name);
+        memset(s, 0, sizeof *s);
+    }
+    g_count = 0;
+    push_takes();  /* nothing taken now: the keys go back until a script takes them again */
+    g_reloading = 1;
+    load_folder(g_api->plugin_dir("lua"), "");
+    load_mods(g_api->mods_dir ? g_api->mods_dir() : NULL);
+    g_reloading = 0;
+    int on = 0;
+    for (int i = 0; i < g_count; ++i) on += g_scripts[i].on;
+    g_api->log("%d script(s) running, %d stopped (reloaded)", on, g_count - on);
+}
+
 static void on_frame(void *user) {
     (void)user;
     read_input();
+    if (g_reload_key && g_in.key[g_reload_key] && !g_prev_in.key[g_reload_key]) reload_scripts();
     dispatch_keys();
     dispatch("bb_frames", NULL, NULL, 0);
 }
@@ -1276,6 +1316,16 @@ BB_PLUGIN_EXPORT int bb_plugin_image(const BbHostApi *api) {
     }
     g_online = env_is("BB_ONLINE", "1") && !env_is("BB_COOP", "1");
     if (g_online) api->log("online play: scripts run, but their calls that change the game do nothing");
+    const char *reload = api->config("lua.reload_key");
+    if (*reload) {
+        g_reload_key = key_from_name(reload);
+        if (g_reload_key < 0) {
+            api->log("reload_key = %s: no key by that name; hot reload off", reload);
+            g_reload_key = 0;
+        } else {
+            api->log("hot reload on %s", reload);
+        }
+    }
     g_loading_scripts = 1;
     load_folder(api->plugin_dir("lua"), "");
     load_mods(api->mods_dir ? api->mods_dir() : NULL);

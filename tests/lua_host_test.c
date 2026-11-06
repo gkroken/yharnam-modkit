@@ -47,6 +47,7 @@ static void host_log(const char *fmt, ...) {
     strcat(g_log, "\n");
     printf("  log: %s\n", line);
 }
+static const char *g_reload_key_name = "";
 static const char *host_config(const char *key) {
     if (!strcmp(key, "a_good.greeting")) return "hello from plugins.ini";
     if (!strcmp(key, "alpha/main.colour")) return "red";
@@ -54,6 +55,7 @@ static const char *host_config(const char *key) {
         return "1";                                         /* granted */
     if (!strcmp(key, "warps.warper_no")) return "0";     /* said no */
     if (!strcmp(key, "warps.lua")) return "1";           /* the host's grant, as the player writes it */
+    if (!strcmp(key, "lua.reload_key")) return g_reload_key_name;
     if (!strcmp(key, LONG_ON "/main.colour")) return "green";
     return "";
 }
@@ -98,8 +100,10 @@ static int host_flag_set(uint32_t id, int v) {
     g_flags[id] = v;
     return 0;
 }
+static int g_flag_hook_sealed;  /* as the real host after the image phase: no new watcher */
 static int host_on_flag(void (*fn)(uint32_t, int, void *), void *user) {
     (void)user;
+    if (g_flag_hook_sealed) return 1;
     g_flag_cb = fn;
     return 0;
 }
@@ -849,6 +853,55 @@ int main(int argc, char **argv) {
             CHECK(g_banners == banners + 1);
             g_flag_cb(13607800 + 10, 1, NULL);  /* Fishing Hamlet */
             CHECK(g_banners == banners + 2 && strstr(g_banner, "Fishing Hamlet (1 of 3)"));
+        }
+
+        /* Hot reload ([lua] reload_key = f8): the press closes every script and loads them again
+         * from disk; a key taken goes back; replace_text keeps the start's text (0, logged); a
+         * new flag watcher with none at the start is an error for that script alone. */
+        {
+            g_reload_key_name = "F8";
+            memset(&g_input_now, 0, sizeof g_input_now);
+            CHECK(load_alone(argv[1], "reloads", "bb.log('version one')\nbb.input.take{keys = {'g'}}\n"
+                                                  "bb.on_frame(function() end)\n"));
+            CHECK(strstr(g_log, "hot reload on F8") && strstr(g_log, "reloads: version one") && g_take_n == 1);
+            char path[MAX_PATH];
+            snprintf(g_dir + strlen(g_dir), MAX_PATH - strlen(g_dir), "\\reloads");  /* plugin_dir as at load */
+            snprintf(path, sizeof path, "%s\\lua\\reloads.lua", g_dir);
+            FILE *f = fopen(path, "wb");
+            fputs("bb.log('version two', bb.replace_text(0x4d686cc, 'x'))\n", f);
+            fclose(f);
+            g_log[0] = 0;
+            g_frame(g_frame_user);  /* F8 up: nothing */
+            CHECK(!strstr(g_log, "reloading"));
+            const int replaces = g_replace_calls;
+            g_flag_hook_sealed = 1;   /* no script watched flags at this DLL's start */
+            g_input_now.key[65] = 1;  /* F8 */
+            g_frame(g_frame_user);
+            CHECK(strstr(g_log, "reloading the scripts") && strstr(g_log, "reloads: version two 0") &&
+                  strstr(g_log, "kept from the start") && g_replace_calls == replaces);
+            CHECK(g_take_n == 0);  /* g given back by the reload itself: version two takes nothing */
+            CHECK(strstr(g_log, "0 stopped (reloaded)"));  /* the mods' scripts load again too */
+            g_log[0] = 0;
+            g_frame(g_frame_user);  /* still held: no second reload */
+            CHECK(!strstr(g_log, "reloading"));
+            /* A second reload, now with a script that watches flags: no watcher at the start, so
+             * it stops alone, saying why. */
+            snprintf(path, sizeof path, "%s\\lua\\watcher.lua", g_dir);
+            f = fopen(path, "wb");
+            fputs("bb.log('watching', pcall(bb.flag.on, function() end))\nbb.flag.on(function() end)\n", f);
+            fclose(f);
+            g_input_now.key[65] = 0;
+            g_frame(g_frame_user);
+            g_input_now.key[65] = 1;
+            g_log[0] = 0;
+            g_frame(g_frame_user);
+            CHECK(strstr(g_log, "watcher: watching false") && strstr(g_log, "watcher: stopped:") &&
+                  strstr(g_log, "restart the game"));
+            CHECK(strstr(g_log, "1 stopped (reloaded)") && strstr(g_log, "reloads: version two 0"));
+            *strrchr(g_dir, '\\') = 0;
+            g_input_now.key[65] = 0;
+            g_flag_hook_sealed = 0;
+            g_reload_key_name = "";
         }
 
         /* Other names: kp0 (98), f12 (69), lshift (225). */

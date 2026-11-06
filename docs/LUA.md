@@ -105,6 +105,18 @@ nothing else uses: the port's default
 keys leave F1 to F8, F11 and F12 free. F9 and F10 can open the map, and `bbport.ini`'s `key_*`
 lines can rebind the game's keys.
 
+## Hot reload
+
+For writing scripts: `[lua] reload_key = f8` in `plugins.ini` makes that key close every script
+and load them all again from disk, mods' scripts included, without restarting the game. It's off
+unless set. Two things only the game's start can do stay as they were then:
+- `bb.replace_text` returns 0 and logs that the start's text stays; new text needs a restart.
+- `bb.flag.on` works only if a script watched flags at the start; otherwise that script stops
+  with an error saying so.
+
+Keys a script took go back to the game and are taken again by whatever the new scripts take.
+The Lua host must be running for the key to work, so at least one script must load at the start.
+
 ## What a script can't do
 
 - **Change the game in online play.** With `BB_ONLINE=1` (not co-op), `bb.flag.set`,
