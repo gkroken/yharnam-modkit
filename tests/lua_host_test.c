@@ -327,9 +327,13 @@ static void write_script(const char *name, const char *text) {
     fclose(f);
 }
 
-/* Deletes a folder and everything in it. 1 when it's gone. */
+/* Deletes a folder and everything in it. 1 when it's gone. A junction or a link to a folder is
+ * removed itself, never followed: what it points to stays. */
 static int remove_tree(const char *dir) {
     char pattern[MAX_PATH], path[MAX_PATH];
+    const DWORD attributes = GetFileAttributesA(dir);
+    if (attributes == INVALID_FILE_ATTRIBUTES) return 1;
+    if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) return RemoveDirectoryA(dir);
     snprintf(pattern, sizeof pattern, "%s\\*", dir);
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
@@ -370,7 +374,8 @@ static int fresh_test_dir(void) {
         } while (FindNextFileA(h, &fd));
         FindClose(h);
     }
-    /* LUA_HOST_TEST_DIR names the folder instead: the test of this cleanup plants leftovers there. */
+    /* LUA_HOST_TEST_DIR names the folder instead: the gate plants leftovers there to test this
+     * cleanup. Whatever folder it names is emptied, so name a scratch one. */
     const char *named = getenv("LUA_HOST_TEST_DIR");
     if (named && *named) snprintf(g_dir, MAX_PATH, "%s", named);
     else snprintf(g_dir, MAX_PATH, "%sbb-lua-test-%lu", temp, GetCurrentProcessId());
@@ -378,7 +383,11 @@ static int fresh_test_dir(void) {
         fprintf(stderr, "lua-host-test: can't empty the leftover folder %s\n", g_dir);
         return 0;
     }
-    return CreateDirectoryA(g_dir, NULL);
+    if (!CreateDirectoryA(g_dir, NULL)) {
+        fprintf(stderr, "lua-host-test: can't make the folder %s (error %lu)\n", g_dir, GetLastError());
+        return 0;
+    }
+    return 1;
 }
 
 int main(int argc, char **argv) {

@@ -123,11 +123,21 @@ run_examples() {
 run_tool_tests() {
     local exe="$root/out/tests/lua-host-test.exe"
     if [[ ! -x $exe ]]; then problem "no $exe (did build-plugins.sh run?)"; return; fi
-    if timeout 120 "$exe" "$root/out/plugins/bb_lua.dll" "$root/plugins/lua/examples" > "$logs/lua-host-test.log" 2>&1; then
+    # It runs in a folder of ours (LUA_HOST_TEST_DIR) holding what an earlier run could have left:
+    # a script the reload test writes later (6c51cba: it failed the test now and then), and a
+    # junction to a folder outside, which the cleanup must remove without emptying its target.
+    local dir="$root/out/lua-host-test" keep="$root/out/lua-host-keep"
+    rm -rf "$keep"; mkdir -p "$dir/reloads/lua" "$keep"
+    echo 'bb.flag.on(function() end)' > "$dir/reloads/lua/watcher.lua"
+    echo keep > "$keep/keep.txt"
+    [[ -e $dir/link ]] || MSYS_NO_PATHCONV=1 cmd /c mklink /J "$(cygpath -w "$dir/link")" "$(cygpath -w "$keep")" > /dev/null
+    if LUA_HOST_TEST_DIR="$(cygpath -w "$dir")" timeout 120 "$exe" "$root/out/plugins/bb_lua.dll" "$root/plugins/lua/examples" \
+            > "$logs/lua-host-test.log" 2>&1; then
         say "Tool tests: $(tail -1 "$logs/lua-host-test.log")"
     else
-        problem "lua-host-test failed: $(grep -m1 'check failed' "$logs/lua-host-test.log")"
+        problem "lua-host-test failed: $(grep -m1 -e 'check failed' -e '^lua-host-test:' "$logs/lua-host-test.log" || tail -1 "$logs/lua-host-test.log")"
     fi
+    [[ -f $keep/keep.txt ]] || problem "lua-host-test's cleanup emptied a folder a junction pointed to (out/lua-host-keep)"
     if bash "$root/tests/quiet_test.sh" > "$logs/quiet-test.log" 2>&1; then
         say "Tool tests: $(tail -1 "$logs/quiet-test.log")"
     else
