@@ -6,8 +6,9 @@ state.
 
 ## Installing
 
-1. `bash tools/build-plugins.sh --install` copies `bb_lua.dll` into `port\plugins\`, or put the
-   DLL in a package's `plugins\` folder.
+1. Put `bb_lua.dll` in a `plugins` folder of a yharnam-pc build with the plugin host (released
+   yharnam-pc packages have none yet). From the SDK, that's `bin\bb_lua.dll`. In this source tree,
+   `bash tools/build-plugins.sh --install` copies it into `port\plugins\`.
 2. Put scripts in `<user>\plugins\lua\` (`port\user\plugins\lua\` in a source tree). They load
    in name order when the game starts.
 

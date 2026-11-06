@@ -5,6 +5,8 @@ Adds a native plugin API and Lua scripting to the
 while the game plays, not only replace files.
 
 - [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md): **start here.** Build, a first Lua script, a first plugin.
+- [sdk/docs/GUIDE.md](sdk/docs/GUIDE.md): the modder guide that ships in the SDK, and
+  [sdk/AGENTS.md](sdk/AGENTS.md), its instructions for coding agents.
 - [docs/LUA.md](docs/LUA.md): every Lua call.
 - [docs/WORKPLAN.md](docs/WORKPLAN.md): phases, tasks, risks and open decisions.
 - [docs/RESEARCH.md](docs/RESEARCH.md): what exists today and the prior art.

@@ -267,8 +267,12 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
       which reads each DLL's exports from the file without loading it, follows the host's load
       rules, edits plugins.ini in place and reads the last run's log). Seen in the real launcher
       on a scratch data folder (PySide6 6.12); not yet in the packaged launcher exe.
-- [ ] Modder guide: `docs/plugins.md` and `docs/lua.md`, and the address conventions (Binary Ninja
-      addresses, 1.09 only).
+- [x] Modder guide: `docs/plugins.md` and `docs/lua.md`, and the address conventions (Binary Ninja
+      addresses, 1.09 only). In the SDK: `docs/GUIDE.md` (what's needed, where files go, a first
+      Lua mod, reloading and testing in the world, finding params and flags, native plugins and
+      addresses, sharing, troubleshooting), beside `LUA.md` and `PLUGINS.md`; `AGENTS.md` (and a
+      `CLAUDE.md` importing it) for coding agents; `tools/game-world.ps1` to test in the world.
+      Released yharnam-pc packages have no plugin host yet: a mod needs a build of this fork.
 - [ ] CI: build the fork and the examples, and run the host-side tests.
 
 ## Phase 7: Upstream

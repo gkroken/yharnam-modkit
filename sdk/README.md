@@ -4,11 +4,20 @@ Everything needed to write mods that run code in Bloodborne on the
 [yharnam-pc](https://github.com/Jgamrot/yharnam-pc) PC port: native plugins in C, and Lua
 scripts with no compiler at all. The game must be CUSA03173 version 1.09.
 
+**Start with `docs/GUIDE.md`.** Using a coding agent (Claude Code and the like)? It reads
+`AGENTS.md` (`CLAUDE.md` points there): the loop of writing a mod, running it in the world and
+reading the log, and the rules.
+
+**You need a build of yharnam-pc with the plugin host:** the `plugins` branch of
+<https://github.com/gkroken/yharnam-pc>, built from source. Released yharnam-pc packages don't
+have it yet, so a plugin or script put beside one of those does nothing.
+
 | Path | What |
 |---|---|
 | `include/bbhost_plugin.h` | The plugin API (bbhost's, by droogie). Every call is documented in it. |
 | `bin/bb_lua.dll` | The Lua host: put it in the game's `plugins` folder to run Lua scripts. |
-| `docs/` | `PLUGINS.md` (what the host provides, plugins.ini, the rules), `LUA.md` (every Lua call). |
+| `docs/` | `GUIDE.md` (the modder guide: from nothing to a mod you can share), `LUA.md` (every Lua call), `PLUGINS.md` (what the host provides, plugins.ini, the rules). |
+| `AGENTS.md`, `CLAUDE.md` | Instructions for coding agents. |
 | `template/` | A plugin of your own to start from: `my_plugin.c` and its `CMakeLists.txt`. |
 | `examples/c/` | Example plugins: `hello`, `frame_hook` (a hook and a patch), `flag_buff`, `weapon_tweak`. |
 | `examples/lua/` | Example scripts: a flag-triggered buff, a weapon tweak, a lamp notification. |
@@ -19,8 +28,8 @@ scripts with no compiler at all. The game must be CUSA03173 version 1.09.
 
 ## Where things go in the game
 
-- **Plugins** (`*.dll`): `bbport-windows\plugins\`, or `plugins\` beside your saves. They load in
-  name order when the game starts.
+- **Plugins** (`*.dll`): `plugins\` in the port's folder (the one with `run.py`), or `plugins\`
+  beside your saves. They load in name order when the game starts.
 - **Lua scripts:** `bb_lua.dll` in a `plugins` folder, and scripts in `plugins\lua\` beside your
   saves, or in a mod: `mods\<mod>\scripts\*.lua`.
 - **Turning things off:** `BB_PLUGINS=0` loads no plugins; `[plugins] <name> = 0` in
