@@ -959,6 +959,14 @@ static int mod_order(const void *a, const void *b) {
  * then the rest in folder-name order, as scripts/mods.py orders the mods' files. */
 static void load_mods(const char *mods_dir) {
     if (!mods_dir || !*mods_dir) return;
+    /* The launcher's switch for all mods (Installed mods), BB_MODS_ENABLED: run.py applies mods'
+     * files unless it's set to something other than 1, and their scripts follow it (tool-f91e77f-F1). */
+    char mods_on[8];
+    const DWORD set = GetEnvironmentVariableA("BB_MODS_ENABLED", mods_on, sizeof mods_on);
+    if (set && (set >= sizeof mods_on || strcmp(mods_on, "1"))) {
+        g_api->log("mods are turned off (BB_MODS_ENABLED is not 1): no mod's scripts are loaded");
+        return;
+    }
     Names disabled = {0}, order = {0};
     if (!load_mod_settings(mods_dir, &disabled, &order)) {
         g_api->log("mods.json could not be read whole: no mod's scripts are loaded (a mod the launcher "

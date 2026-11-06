@@ -693,6 +693,23 @@ int main(int argc, char **argv) {
         CHECK(image3 && image3(&g_api) == 0);
         CHECK(strstr(g_log, "gamma main running") && strstr(g_log, "long off running"));
         SetEnvironmentVariableA("BB_MODS_CONFIG", NULL);
+        /* tool-f91e77f-F1: the launcher's switch for all mods (BB_MODS_ENABLED). run.py applies
+         * mods' files unless it's set to something other than 1; their scripts follow it, and the
+         * player's own scripts still load. */
+        static const char *const off_values[] = {"0", "yes"};
+        for (int i = 0; i < 2; ++i) {
+            SetEnvironmentVariableA("BB_MODS_ENABLED", off_values[i]);
+            char tag[32];
+            snprintf(tag, sizeof tag, "modsoff%d", i);
+            CHECK(load_with_config(argv[1], tag, "{}", 2));
+            CHECK(strstr(g_log, "mods are turned off (BB_MODS_ENABLED is not 1): no mod's scripts are loaded"));
+            CHECK(!strstr(g_log, "alpha main running") && !strstr(g_log, "gamma main running"));
+            CHECK(strstr(g_log, "f_sandbox: loaded"));
+        }
+        SetEnvironmentVariableA("BB_MODS_ENABLED", "1");
+        CHECK(load_with_config(argv[1], "modson", "{}", 2));
+        CHECK(!strstr(g_log, "mods are turned off") && strstr(g_log, "alpha main running"));
+        SetEnvironmentVariableA("BB_MODS_ENABLED", NULL);
     }
 
     /* tool-9614890-F1: online play (BB_ONLINE=1 without BB_COOP=1) refuses every call that changes
