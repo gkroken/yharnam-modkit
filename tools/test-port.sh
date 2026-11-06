@@ -127,6 +127,11 @@ run_tool_tests() {
     else
         problem "lua-host-test failed: $(grep -m1 'check failed' "$logs/lua-host-test.log")"
     fi
+    if bash "$root/tests/quiet_test.sh" > "$logs/quiet-test.log" 2>&1; then
+        say "Tool tests: $(tail -1 "$logs/quiet-test.log")"
+    else
+        problem "quiet-test failed: $(grep -m1 'check failed' "$logs/quiet-test.log")"
+    fi
 }
 
 [[ $mode != --py-only ]] && run_examples

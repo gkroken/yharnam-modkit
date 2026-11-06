@@ -24,7 +24,7 @@ if (( status == 0 )); then
 fi
 echo "FAILED $name: exit $status ($((SECONDS - start)) s, log: $log)"
 errors=$(grep -a -n -i -E 'error|fail|undefined reference|assert|check failed|traceback|exception|PROBLEM' "$log" \
-         | grep -a -v -i -E '(-W|warning: )' | head -40)
+         | grep -a -v -i -E '(^|[: ])warning:' | head -40)  # warnings are not errors; -Werror ones are
 [[ -n $errors ]] && { echo "--- error lines"; echo "$errors"; }
 echo "--- last 15 lines"
 tail -n 15 "$log"
