@@ -26,8 +26,8 @@ A mod can ship scripts beside its files: `mods\<mod>\scripts\*.lua`.
   same `mods.json` the port's mod merging reads (`BB_MODS_CONFIG`). If that file exists but
   can't be read whole (cut off, or not the launcher's shape), no mod's scripts load, and the log
   says so. Your own scripts in `<user>\plugins\lua\` still load. Names of any length work.
-- **Script-only mods:** a mod made only of scripts is fine. The port's mod merging lists it as
-  having no game files and carries on.
+- **Script-only mods:** a mod made only of `scripts/*.lua` is a mod like any other: the
+  launcher's Installed mods page lists it, turns it off and orders it (port fdab644).
 
 `plugins/lua/examples/` has three scripts to start from:
 - `flag_buff.lua`: a SpEffect each time a chosen flag turns on.
