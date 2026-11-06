@@ -961,8 +961,10 @@ static void load_mods(const char *mods_dir) {
     if (!mods_dir || !*mods_dir) return;
     /* The launcher's switch for all mods (Installed mods), BB_MODS_ENABLED: run.py applies mods'
      * files unless it's set to something other than 1, and their scripts follow it (tool-f91e77f-F1). */
-    /* A variable set to "" returns 0 like a missing one; only GetLastError tells them apart, and
-     * run.py reads "" as off (tool-ea15752-N1). */
+    /* A variable set to "" returns 0 like a missing one; only GetLastError tells them apart, so
+     * the last error is cleared first. "" is off: the fail-closed choice, as the launcher's page
+     * reads it (tool-ea15752-N1). run.py doesn't start the game with it at all (mods.py refuses
+     * --enabled ''), so this matters only to a host started some other way (tool-ece4049-N2). */
     char mods_on[8];
     SetLastError(ERROR_SUCCESS);
     const DWORD set = GetEnvironmentVariableA("BB_MODS_ENABLED", mods_on, sizeof mods_on);

@@ -60,7 +60,12 @@ static const char *host_config(const char *key) {
     return "";
 }
 static char g_mods[MAX_PATH];
-static const char *host_mods_dir(void) { return g_mods; }
+/* It leaves "variable not found" as the last error, as any host call might: bb_lua reads
+ * BB_MODS_ENABLED right after, and must not take that stale error for its own (tool-ece4049-N1). */
+static const char *host_mods_dir(void) {
+    SetLastError(ERROR_ENVVAR_NOT_FOUND);
+    return g_mods;
+}
 static const char *host_plugin_dir(const char *name) {
     static char dir[MAX_PATH];
     snprintf(dir, sizeof dir, "%s\\%s", g_dir, name);
