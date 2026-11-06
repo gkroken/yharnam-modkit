@@ -12,6 +12,8 @@
 #
 # Run from any shell:  bash tools/test-port.sh            (C and Python)
 #                      bash tools/test-port.sh --c-only   (or --py-only)
+#                      bash tools/test-port.sh --quiet    (only problems and the last line:
+#                                                          for agents; combines with the others)
 # Needs: a configured port build (bash build.sh in MSYS2 CLANG64, once), python.org Python
 # (BB_PYTHON, default the per-user 3.13) with capstone, keystone-engine and numpy
 # (pip install --user capstone keystone-engine numpy), and the game dump
@@ -26,7 +28,16 @@ export BB_TEST_GAME_DIR=${BB_TEST_GAME_DIR:-C:/games/Bloodborne/game}
 export BB_CPU_GAME_DIR=${BB_CPU_GAME_DIR:-$BB_TEST_GAME_DIR}
 logs=${BB_TEST_LOGS:-$root/out/test-logs}
 mkdir -p "$logs"
-mode=${1:-all}
+mode=all
+quiet=0
+for arg in "$@"; do
+    case $arg in
+        --quiet) quiet=1 ;;
+        --c-only|--py-only) mode=$arg ;;
+        *) echo "unknown option $arg"; exit 2 ;;
+    esac
+done
+say() { (( quiet )) || echo "$@"; }  # progress lines; problems always print
 
 problems=0
 problem() { echo "  PROBLEM $*"; problems=$((problems + 1)); }
@@ -41,7 +52,7 @@ compare() {  # compare <kind: c-known|py-known> <file of failed ids>
     local id
     while read -r id; do
         [[ -z $id ]] && continue
-        if known "$1" | grep -qxF -- "$id"; then echo "  known   $id"; else problem "new failure: $id"; fi
+        if known "$1" | grep -qxF -- "$id"; then say "  known   $id"; else problem "new failure: $id"; fi
     done < "$2"
     while read -r id; do
         grep -qxF -- "$id" "$2" || echo "  NOTE    known failure passed now (remove it from the baseline): $id"
@@ -60,6 +71,9 @@ for t in \$(printf '%s\n' "\$targets" | grep -o -E '^[a-z0-9-]+-test(\.exe)?:' |
 done
 EOF
     MSYSTEM=CLANG64 CHERE_INVOKING=1 /c/msys64/usr/bin/bash.exe -l "$script" > "$results" 2>&1
+    # file-offsets-test (upstream) leaves port/bbport-offsets-<time>/ behind, empty folders by
+    # then: remove only the empty ones, so a run doesn't grow the tree.
+    find "$port" -maxdepth 1 -name 'bbport-offsets-*' -type d -exec find {} -depth -type d -empty -delete \; 2>/dev/null
     if grep -q '^NOTARGETS' "$results"; then
         problem "no C/C++ test targets: is the port configured (bash build.sh)? $(head -c 300 "$results")"
         return
@@ -68,7 +82,7 @@ EOF
     targets=$(grep -c -E '^(PASS|FAIL|BUILDFAIL) ' "$results")
     pass=$(grep -c '^PASS ' "$results")
     grep -E '^(FAIL|BUILDFAIL) ' "$results" | awk '{print $2}' > "$logs/c-failed.txt"
-    echo "C/C++: $targets targets, $pass passed (logs: $logs/build-*.log, run-*.log)"
+    say "C/C++: $targets targets, $pass passed (logs: $logs/build-*.log, run-*.log)"
     compare c-known "$logs/c-failed.txt"
     (( targets >= $(floor c-min-targets) )) || problem "only $targets C/C++ targets; the baseline has $(floor c-min-targets)"
     (( pass >= $(floor c-min-pass) )) || problem "only $pass C/C++ targets passed; the baseline has $(floor c-min-pass)"
@@ -87,7 +101,7 @@ run_py() {
     if [[ -z $ran ]]; then problem "the Python suite did not report a run: $(tail -3 "$log")"; return; fi
     skipped=$(grep -a -o -E 'skipped=[0-9]+' "$log" | grep -o -E '[0-9]+' || true)
     skipped=${skipped:-0}
-    grep -a -E '^Ran |^(OK|FAILED)' "$log" | sed 's/^/Python: /'
+    (( quiet )) || grep -a -E '^Ran |^(OK|FAILED)' "$log" | sed 's/^/Python: /'
     # The full id is in the parentheses: module.Class.method, or unittest.loader._FailedTest.<module>.
     grep -a -E '^(ERROR|FAIL): ' "$log" | sed -E 's/^[A-Z]+: [^ ]+ \(([^)]*)\).*$/\1/' > "$logs/py-failed.txt"
     compare py-known "$logs/py-failed.txt"
@@ -98,7 +112,7 @@ run_py() {
 # The example plugins (plugins/examples) must keep building against the port's header.
 run_examples() {
     if bash "$root/tools/build-plugins.sh" > "$logs/examples.log" 2>&1; then
-        echo "Examples: $(grep -c '^built ' "$logs/examples.log") built"
+        say "Examples: $(grep -c '^built ' "$logs/examples.log") built"
     else
         problem "an example plugin does not build: $(grep '^FAIL' "$logs/examples.log" | head -3)"
     fi
@@ -109,7 +123,7 @@ run_tool_tests() {
     local exe="$root/out/tests/lua-host-test.exe"
     if [[ ! -x $exe ]]; then problem "no $exe (did build-plugins.sh run?)"; return; fi
     if timeout 120 "$exe" "$root/out/plugins/bb_lua.dll" "$root/plugins/lua/examples" > "$logs/lua-host-test.log" 2>&1; then
-        echo "Tool tests: $(tail -1 "$logs/lua-host-test.log")"
+        say "Tool tests: $(tail -1 "$logs/lua-host-test.log")"
     else
         problem "lua-host-test failed: $(grep -m1 'check failed' "$logs/lua-host-test.log")"
     fi
