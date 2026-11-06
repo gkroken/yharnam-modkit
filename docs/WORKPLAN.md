@@ -278,7 +278,8 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
       `bash build.sh`, every CMake `*-test` target (`.github/ci/c-tests.sh`, which names the
       seven upstream ones that can't run on Windows and fails on a stale entry), and the
       Python `test_launcher_plugins`, `test_paramdefs` and `test_probe` (`.github/ci/py-tests.py`,
-      where any skip it doesn't expect fails the run). Not yet green on GitHub. The examples,
+      where any skip it doesn't expect fails the run). Green on GitHub at port fecd98d
+      (2026-11-06: every step passed on the first run). The examples,
       SDK and Lua host live in this repository, which isn't on GitHub: CI can't build them until
       the user decides to publish it (the gate builds them locally meanwhile).
 
