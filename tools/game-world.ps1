@@ -61,6 +61,14 @@ foreach ($p in $Plugins) { [void]$placed.Add([pscustomobject]@{ From = $p; To = 
 foreach ($s in $Scripts) { [void]$placed.Add([pscustomobject]@{ From = $s; To = Join-Path "$user\plugins\lua" (Split-Path $s -Leaf) }) }
 [void]$placed.Add([pscustomobject]@{ From = $markerSource; To = "$user\plugins\lua\$marker" })
 if ($Ini) { [void]$placed.Add([pscustomobject]@{ From = $Ini; To = "$user\plugins.ini" }) }
+# Two of them to one place (two mods' main.lua, two plugin.dll, a script named as the marker):
+# the second would set the first aside as if it were the developer's own and put it back after,
+# leaving a test file behind for good (tool-d2227e0-F1). Refused before anything is touched.
+$clash = $placed | Group-Object { $_.To.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 } | Select-Object -First 1
+if ($clash) {
+    $names = ($clash.Group | ForEach-Object { $_.From }) -join ', '
+    throw "these go to the same place, $($clash.Group[0].To): $names. Rename one (only one would run)"
+}
 $backup = Join-Path $env:TEMP "bb-game-world-save-$PID"
 $copied = @()
 $kept = @()
