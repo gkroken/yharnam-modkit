@@ -250,7 +250,11 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
       LICENSES.txt), so it isn't shipped: seven built-in names whose layouts the port's own edits
       or the game's files prove, and raw for the rest. Replacing an event: not yet.
 - [ ] Talk edits (`script/talk/*.talk.edit.toml`): a few high-level operations only, such as
-      "add a menu option to NPC X that runs event Y", not raw state machines.
+      "add a menu option to NPC X that runs event Y", not raw state machines. **Written:**
+      `[[option]]` (script, text, flag, menu) adds a menu entry that turns a flag on and leaves as
+      Leave does; 51 of the game's 53 menus take one, checked on the dump. `script_edits.py <game>
+      <map>` lists a map's menus. Open: user check 3 (picking one in game); custom option text
+      (message edits).
 - [x] Applied after file mods and in mod order, from `scripts/mods.py` (which builds the mods'
       overlay) rather than `prepare.py`: the result is a generated layer on top. The player's
       files are never changed. A mod whose edit fails is left out with a log line; the start
@@ -258,7 +262,9 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
 - [x] Mods ship **edits, not FromSoftware files**. That avoids redistribution problems and lets
       two mods edit the same file.
 - [ ] Converters from DarkScript3 and Soulstruct output to edit files, so authors keep their
-      tools.
+      tools. **DarkScript3 done:** `scripts/script_convert.py` (plain instruction lists, every
+      argument written, with the modder's own EMEDF; checked against DarkScript3's real table,
+      not yet on text DarkScript3 saved itself). Soulstruct: not started.
 
 **Done when** two mods each add an event to the same `m*.emevd.dcx`, and both work in game.
 Shown in game (2026-11-06, `game-world.ps1 -Mods`): two mods each added an event to

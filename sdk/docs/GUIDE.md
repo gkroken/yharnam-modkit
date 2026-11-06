@@ -28,6 +28,7 @@ and `PLUGINS.md` (the native API as this host provides it, plugins.ini, the rule
 | Your own Lua scripts | `<user>\plugins\lua\*.lua` |
 | A mod's Lua scripts | `mods\<mod>\scripts\*.lua`, named `<mod>/<file>` |
 | A mod's event edits | `mods\<mod>\edits\event\<map>.emevd.edit.toml` (section 6) |
+| A mod's talk options | `mods\<mod>\edits\talk\<map>.talk.edit.toml` (section 6) |
 | Switches and options | `<user>\plugins.ini` (the launcher's Mods & Patches > Plugins and scripts page sets the switches) |
 | What happened | the launcher's Log page, or `<user>\last_run.log` |
 
@@ -137,6 +138,42 @@ and the player's own copy of the game is never changed.
 - **Test it** with `game-world.ps1 -Mods mods\<mod>`, and a Lua script that logs the flags your
   event sets (`bb.flag.on`), as the example does.
 
+### Written in DarkScript3
+
+If you write events in DarkScript3, convert them instead of typing the edit file:
+
+```
+python <install>\scripts\script_convert.py m24_01_00_00.emevd.js `
+    --emedf <DarkScript3>\Resources\bb-common.emedf.json --events 12415990,12415991 > edit.toml
+```
+The `.js` is DarkScript3's text of the map's event file with your events added (and, to have the
+map start one, `InitializeEvent(0, <id>, 0)` in event 0). Only the events you name are converted;
+every instruction comes out raw, with your line beside it as a comment, so the edit file needs
+neither DarkScript3 nor its table to work. Events with parameters and MattScript (`if`/`else`,
+`goto`) aren't converted: write those events as plain instruction lists.
+
+### Talk options
+
+A mod can add an option to an NPC's talk menu. Picking it turns a flag on and ends the talk, as
+Leave does; an event of yours (an `IfEventFlag` on that flag) does the rest.
+
+```toml
+# mods\<mod>\edits\talk\m24_01_00_00.talk.edit.toml edits script\talk\m24_01_00_00.talkesdbnd.dcx
+[[option]]
+script = "t241335"     # the talk script (the NPC)
+text = 15000000        # the message the option shows: an id of the game's talk text
+flag = 12401902        # turned on when the option is picked
+menu = 1               # optional: which menu, when the script has two
+```
+- **Which script, which menu:** `python <install>\scripts\script_edits.py <game> m24_01_00_00` lists
+  every talk menu of that map: its script, its number, its entries (index and text id), and
+  whether it takes an option (two of the game's 53 menus don't, and say why).
+- **The text** is an existing talk message id for now (the entries' text ids are a start); your
+  own words need message edits, which aren't there yet.
+- Several mods' options go in one menu, in mod order.
+- **Not yet seen in the game itself:** the edit is checked on every talk script of the game's
+  files, but nobody has picked such an option in game yet. Say how it went.
+
 ## 7. Native plugins
 
 Use C when Lua can't do it: hooks on the game's functions, calls into the game, raw memory.
@@ -188,5 +225,5 @@ Use C when Lua can't do it: hooks on the game's functions, calls into the game, 
 | `Plugin lua: <script>: stopped: <why>` | your script's error, with its line number |
 | `mod <mod> is disabled (mods.json)` | the mod is off in the launcher, and its scripts with it |
 | `Script edits: <mod>: <file>: <why>; left out` | that mod's event edit isn't applied (a name, a value or an id it gives); the others are |
-| `Script edits: ... is not in the game` | the edit file's name doesn't match an event file (`event\<map>.emevd.dcx`) |
+| `Script edits: ... is not in the game` | the edit file's name doesn't match a game file (`event\<map>.emevd.dcx`, `script\talk\<map>.talkesdbnd.dcx`) |
 | A hook or patch refused | the bytes there aren't what you passed: wrong address, not 1.09, or bytes from `eboot.elf` |
