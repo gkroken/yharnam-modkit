@@ -12,7 +12,7 @@ set(_lua "${CMAKE_CURRENT_SOURCE_DIR}/lua-5.4.7/src")
 file(GLOB _lua_sources "${_lua}/*.c")
 # Lua's own warnings are Lua's: its sources build without them, bb_lua.c with them as errors.
 add_library(bb_lua_core STATIC ${_lua_sources})
-set_target_properties(bb_lua_core PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
+set_target_properties(bb_lua_core PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF POSITION_INDEPENDENT_CODE ON)
 target_compile_options(bb_lua_core PRIVATE -w)
 
 bb_add_plugin(bb_lua bb_lua.c)

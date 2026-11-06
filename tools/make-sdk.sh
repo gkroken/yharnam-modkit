@@ -3,16 +3,20 @@
 # Makes the plugin SDK release package (sdk/README.md says what's in it) from this tree:
 #   out/sdk/bloodborne-plugin-sdk-api<N>/      the package
 #   out/sdk/bloodborne-plugin-sdk-api<N>.zip   the same, zipped
-# <N> is BB_PLUGIN_API_VERSION in port/include/bbhost_plugin.h. bin/bb_lua.dll is taken from
-# out/plugins/, so run tools/build-plugins.sh first.
+# <N> is BB_PLUGIN_API_VERSION in port/include/bbhost_plugin.h. bin/bb_lua.dll is built here from
+# the package's own src/bb_lua (Release, with its CMakeLists), so the source it ships is the
+# binary's. Needs MSYS2 CLANG64 (clang, cmake, ninja).
 #
 #   bash tools/make-sdk.sh           make it
 #   bash tools/make-sdk.sh --check   make it, then prove it works on its own: configure and build
 #                                    the package's examples, its template (in place and copied
-#                                    elsewhere) and bb_lua from its src/, with CMake and Ninja;
-#                                    check each DLL exports bb_plugin_info and imports only
-#                                    Windows' own DLLs; check the package holds only the file
-#                                    types it should (no game files). The test gate runs this.
+#                                    elsewhere) and bb_lua from its src/ again, with CMake and
+#                                    Ninja; the rebuilt bb_lua.dll must equal bin/'s byte for byte,
+#                                    and lua-host-test (tools/build-plugins.sh builds it) must
+#                                    pass on bin/'s; each DLL must export bb_plugin_info and import
+#                                    only Windows' own DLLs; only source, doc and build files may
+#                                    be in it besides bin/bb_lua.dll (no game files). The test
+#                                    gate runs this.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 check=0
@@ -30,15 +34,30 @@ api=$(sed -n -E 's/^#define BB_PLUGIN_API_VERSION ([0-9]+).*/\1/p' "$header")
 name="bloodborne-plugin-sdk-api$api"
 out="$root/out/sdk"
 pkg="$out/$name"
-lua_dll="$root/out/plugins/bb_lua.dll"
-[[ -f $lua_dll ]] || { echo "FAIL: no $lua_dll: run tools/build-plugins.sh first"; exit 1; }
+work="$out/check"
+export PATH="$bin:$PATH"
+win() { cygpath -m "$1"; }
+toolchain="$(win "$pkg/cmake/bb-clang-mingw.cmake")"
 
-rm -rf "$pkg" "$out/$name.zip"
-mkdir -p "$pkg"/{include,bin,docs,examples/c,examples/lua,src/bb_lua}
+failed=0
+fail() { echo "FAIL $*"; failed=$((failed + 1)); }
+build() {  # build <build dir> <source dir> [cmake args...]: configure and build, log in <build dir>.log
+    local dir=$1 src=$2; shift 2
+    rm -rf "$dir"
+    if ! { cmake -G Ninja -S "$(win "$src")" -B "$(win "$dir")" -DCMAKE_TOOLCHAIN_FILE="$toolchain" "$@" &&
+           cmake --build "$(win "$dir")"; } > "$dir.log" 2>&1; then
+        fail "$(basename "$dir"): does not build (log: ${dir#"$root/"}.log)"
+        grep -m5 -E 'error|Error' "$dir.log" | sed 's/^/    /'
+        return 1
+    fi
+}
+
+# The package.
+rm -rf "$pkg" "$out/$name.zip" "$work"
+mkdir -p "$pkg"/{include,bin,docs,examples/c,examples/lua,src/bb_lua} "$work"
 cp -r "$root/sdk/." "$pkg/"
 cp "$root/LICENSE" "$pkg/"
 cp "$header" "$pkg/include/"
-cp "$lua_dll" "$pkg/bin/"
 cp "$root/port/docs/PLUGINS.md" "$root/docs/LUA.md" "$pkg/docs/"
 for dir in "$root"/plugins/examples/*/; do
     mkdir -p "$pkg/examples/c/$(basename "$dir")"
@@ -47,13 +66,16 @@ done
 cp "$root"/plugins/lua/examples/*.lua "$pkg/examples/lua/"
 cp "$root/plugins/lua/bb_lua.c" "$pkg/src/bb_lua/"
 cp -r "$root/third_party/lua-5.4.7" "$pkg/src/bb_lua/"
-rev() {  # rev <git dir>: the commit, with "+changes" when the tree differs from it
-    local sha
-    sha=$(git -C "$1" rev-parse --short=7 HEAD)
-    git -C "$1" diff --quiet HEAD -- . ':!gpu/third_party' 2>/dev/null || sha="$sha+changes"
+build "$out/build-bb_lua" "$pkg/src/bb_lua" || exit 1
+cp "$out/build-bb_lua/bb_lua.dll" "$pkg/bin/"
+rev() {  # rev <git dir> [pathspec...]: the commit, with "+changes" when the tree differs from it
+    local dir=$1 sha; shift
+    sha=$(git -C "$dir" rev-parse --short=7 HEAD)
+    git -C "$dir" diff --quiet --ignore-submodules=dirty HEAD -- . "$@" 2>/dev/null || sha="$sha+changes"
     echo "$sha"
 }
-printf 'plugin API %s\ntool %s\nport %s\n' "$api" "$(rev "$root")" "$(rev "$root/port")" > "$pkg/VERSION"
+# The port's own submodules' dirt (fsr-vulkan) isn't ours; a moved port commit in the tool is.
+printf 'plugin API %s\ntool %s\nport %s\n' "$api" "$(rev "$root")" "$(rev "$root/port" ':!gpu/third_party')" > "$pkg/VERSION"
 
 "$python" -I -c '
 import os, sys, zipfile
@@ -69,21 +91,6 @@ with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
 (( check )) || { echo "made out/sdk/$name.zip"; exit 0; }
 
 # --check
-failed=0
-fail() { echo "FAIL $*"; failed=$((failed + 1)); }
-work="$out/check"
-rm -rf "$work"; mkdir -p "$work"
-export PATH="$bin:$PATH"
-win() { cygpath -m "$1"; }
-toolchain="$(win "$pkg/cmake/bb-clang-mingw.cmake")"
-build() {  # build <tag> <source dir> [cmake args...]: configure and build, log in $work/<tag>.log
-    local tag=$1 src=$2; shift 2
-    if ! { cmake -G Ninja -S "$(win "$src")" -B "$(win "$work/$tag")" -DCMAKE_TOOLCHAIN_FILE="$toolchain" "$@" &&
-           cmake --build "$(win "$work/$tag")"; } > "$work/$tag.log" 2>&1; then
-        fail "$tag: does not build (log: out/sdk/check/$tag.log)"; grep -m5 -E 'error|Error' "$work/$tag.log" | sed 's/^/    /'
-        return 1
-    fi
-}
 dll_ok() {  # dll_ok <dll>: exports bb_plugin_info; imports only Windows' own DLLs
     local dll=$1 dump bad
     [[ -f $dll ]] || { fail "$(basename "$dll") was not built"; return; }
@@ -94,23 +101,27 @@ dll_ok() {  # dll_ok <dll>: exports bb_plugin_info; imports only Windows' own DL
     [[ -z $bad ]] || fail "$(basename "$dll") needs DLLs a player won't have: $bad"
 }
 
-if build examples "$pkg"; then
+if build "$work/examples" "$pkg"; then
     for dir in "$pkg"/examples/c/*/; do dll_ok "$work/examples/$(basename "$dir").dll"; done
 fi
-build template "$pkg/template" && dll_ok "$work/template/my_plugin.dll"
+build "$work/template" "$pkg/template" && dll_ok "$work/template/my_plugin.dll"
 cp -r "$pkg/template" "$work/mine"
-build mine-build "$work/mine" -DBB_SDK_DIR="$(win "$pkg")" && dll_ok "$work/mine-build/my_plugin.dll"
-if build bb_lua "$pkg/src/bb_lua"; then
-    dll_ok "$work/bb_lua/bb_lua.dll"
-    # The shipped source must be the shipped DLL's: the Lua host's tests pass on the DLL built from
-    # it too, with the package's example scripts.
-    host_test="$root/out/tests/lua-host-test.exe"
-    if [[ ! -x $host_test ]]; then
-        fail "no $host_test to test src/bb_lua's build with (run tools/build-plugins.sh)"
-    elif ! timeout 120 "$host_test" "$work/bb_lua/bb_lua.dll" "$pkg/examples/lua" > "$work/bb_lua-test.log" 2>&1; then
-        fail "lua-host-test fails on the bb_lua.dll built from src/bb_lua (log: out/sdk/check/bb_lua-test.log)"
-    fi
+build "$work/mine-build" "$work/mine" -DBB_SDK_DIR="$(win "$pkg")" && dll_ok "$work/mine-build/my_plugin.dll"
+
+# bin/bb_lua.dll: the DLL that ships. Its source is src/bb_lua: built again from there (in another
+# folder; the build is reproducible), it must come out the same, byte for byte.
+shipped="$pkg/bin/bb_lua.dll"
+dll_ok "$shipped"
+if build "$work/bb_lua" "$pkg/src/bb_lua" && ! cmp -s "$work/bb_lua/bb_lua.dll" "$shipped"; then
+    fail "bin/bb_lua.dll is not what src/bb_lua builds (rebuilt: out/sdk/check/bb_lua/bb_lua.dll)"
 fi
+host_test="$root/out/tests/lua-host-test.exe"
+if [[ ! -x $host_test ]]; then
+    fail "no $host_test to test bin/bb_lua.dll with (run tools/build-plugins.sh)"
+elif ! timeout 120 "$host_test" "$shipped" "$pkg/examples/lua" > "$work/bb_lua-test.log" 2>&1; then
+    fail "lua-host-test fails on bin/bb_lua.dll (log: out/sdk/check/bb_lua-test.log)"
+fi
+
 # A copied template whose SDK is not found must say so, not build against something else.
 cp -r "$pkg/template" "$work/lost"
 if cmake -G Ninja -S "$(win "$work/lost")" -B "$(win "$work/lost-build")" -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
@@ -126,4 +137,4 @@ files=$(find "$pkg" -type f | wc -l)
 [[ $listed == "$files" ]] || fail "the zip holds $listed files, the package $files"
 
 if (( failed )); then echo "SDK check: $failed problem(s)"; exit 1; fi
-echo "SDK check: out/sdk/$name.zip ($files files) builds $(ls "$pkg"/examples/c | wc -l) examples, the template and bb_lua"
+echo "SDK check: out/sdk/$name.zip ($files files, $(head -3 "$pkg/VERSION" | tr '\n' ' ')) builds $(ls "$pkg"/examples/c | wc -l) examples, the template and bb_lua the same again"

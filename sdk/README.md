@@ -58,6 +58,10 @@ cmake -G Ninja -B build -DCMAKE_TOOLCHAIN_FILE=<sdk>/cmake/bb-clang-mingw.cmake 
 cmake --build build
 ```
 
+Builds are optimized (Release) unless you pass `-DCMAKE_BUILD_TYPE=Debug`. The SDK looks for
+MSYS2's clang first and says which it took; `-DBB_CLANG=<path>` picks another (it must target
+MinGW: the official LLVM installer's clang targets MSVC and won't link these).
+
 Copy `build/my_plugin.dll` into the game's `plugins` folder, start the game, load a character and
 press F6. To build every example: `cmake -G Ninja -B build -DCMAKE_TOOLCHAIN_FILE=cmake/bb-clang-mingw.cmake`
 here, then `cmake --build build`.

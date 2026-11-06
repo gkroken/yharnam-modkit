@@ -257,9 +257,10 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
 
 - [x] Release package: `bash tools/make-sdk.sh` makes `out/sdk/bloodborne-plugin-sdk-api<N>.zip`
       from `sdk/` (README, CMake toolchain file for clang, `bb_add_plugin`, a template), the
-      header, the C and Lua examples, the docs, and `bb_lua.dll` with its whole source (GPL). The
-      gate's `--check` builds the unpacked package on its own (examples, template, bb_lua from
-      its source, which then passes lua-host-test) and holds every DLL to Windows' own imports.
+      header, the C and Lua examples, the docs, and `bb_lua.dll` built from the package's own
+      `src/bb_lua` (its whole source, GPL). The gate's `--check` builds the package on its own
+      (examples, template, and bb_lua again, which must equal the shipped DLL byte for byte),
+      runs lua-host-test on the shipped `bb_lua.dll`, and holds every DLL to Windows' own imports.
       In the world, the template built from the package showed HP and position on F6.
 - [ ] The launcher's Mods page lists plugins and scripts with toggles and load errors, read from
       `bb_plugin_info`.

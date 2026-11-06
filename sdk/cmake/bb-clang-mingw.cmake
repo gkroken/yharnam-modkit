@@ -16,13 +16,17 @@ if(NOT CMAKE_HOST_WIN32)
     set(CMAKE_SYSTEM_PROCESSOR x86_64)
 endif()
 
-# -DBB_CLANG=<path> picks one; otherwise clang on PATH, then MSYS2's CLANG64.
-find_program(BB_CLANG NAMES clang clang.exe PATHS "C:/msys64/clang64/bin" "$ENV{MSYS2_ROOT}/clang64/bin"
-             DOC "The clang to build with")
+# -DBB_CLANG=<path> picks one; otherwise MSYS2's CLANG64 first, and only then clang on PATH. The
+# order matters: the official LLVM installer's clang targets MSVC and has no MinGW libraries, so
+# it would fail at link time if it came first.
+find_program(BB_CLANG NAMES clang clang.exe PATHS "$ENV{MSYS2_ROOT}/clang64/bin" "C:/msys64/clang64/bin"
+             NO_DEFAULT_PATH DOC "The clang to build with")
+find_program(BB_CLANG NAMES clang clang.exe DOC "The clang to build with")
 if(NOT BB_CLANG)
     message(FATAL_ERROR "No clang found. Install MSYS2 and its CLANG64 toolchain "
                         "(pacman -S mingw-w64-clang-x86_64-toolchain), or set BB_CLANG.")
 endif()
+message(STATUS "Bloodborne plugin SDK: building with ${BB_CLANG} (another one: -DBB_CLANG=<path>)")
 
 set(CMAKE_C_COMPILER "${BB_CLANG}")
 set(CMAKE_C_COMPILER_TARGET x86_64-w64-windows-gnu)
