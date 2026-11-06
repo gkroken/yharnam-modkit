@@ -443,6 +443,9 @@ int main(int argc, char **argv) {
                  "        and coroutine.wrap and string.format) then reached[#reached + 1] = 'a needed library is missing' end\n"
                  "bb.log('sandbox: ' .. (#reached == 0 and 'closed' or ('reaches ' .. table.concat(reached, ','))))\n");
     write_script("readme.txt", "not a script");
+    /* Renamed to turn them off: "*.lua" finds them through their 8.3 short names (N_OFF~1.LUA). */
+    write_script("n_off.lua_off", "bb.log('renamed script ran')\n");
+    write_script("n_off.luax", "bb.log('renamed script ran')\n");
     /* Every game binding, through the fake host. */
     write_script("m_game.lua",
                  "bb.log('flag 5', bb.flag.get(5), 'flag 500', bb.flag.get(500))\n"
@@ -567,6 +570,14 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_log, "a_good: loaded") < strstr(g_log, "b_errors: loaded"));
     CHECK(strstr(g_log, "f_sandbox: sandbox: closed"));
     CHECK(!strstr(g_log, "readme"));
+    CHECK(!strstr(g_log, "renamed script ran") && !strstr(g_log, "n_off"));
+    {
+        char path[MAX_PATH], short_name[MAX_PATH];
+        snprintf(path, sizeof path, "%s\\lua\\n_off.lua_off", g_dir);
+        const DWORD n = GetShortPathNameA(path, short_name, MAX_PATH);
+        if (n < 4 || n >= MAX_PATH || _stricmp(short_name + n - 4, ".lua"))
+            printf("note: this volume makes no 8.3 names, so the renamed-script check can't fail here\n");
+    }
     CHECK(strstr(g_log, "15 script(s) running, 1 stopped"));
     /* tool-51d16fc-F1: names are compared whole. The disabled long one is left out, its twin runs
      * under its whole name, and reads its own plugins.ini section. */

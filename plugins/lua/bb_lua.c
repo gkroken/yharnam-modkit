@@ -727,6 +727,10 @@ static void load_folder(const char *folder, const char *prefix) {
     wchar_t names[MAX_SCRIPTS][MAX_PATH];
     int n = 0;
     do {
+        /* *.lua also matches a long name whose 8.3 short name ends in .LUA: "x.lua_off", "x.luax".
+         * A script renamed to turn it off stays off (as the host does for plugins, port-4409141-F3). */
+        const size_t name_len = wcslen(found.cFileName);
+        if (name_len < 4 || _wcsicmp(found.cFileName + name_len - 4, L".lua")) continue;
         if (!(found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && n < MAX_SCRIPTS) wcscpy(names[n++], found.cFileName);
     } while (FindNextFileW(h, &found));
     FindClose(h);
