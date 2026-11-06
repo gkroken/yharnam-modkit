@@ -58,7 +58,9 @@ cmake -G Ninja -B build -DCMAKE_TOOLCHAIN_FILE=<sdk>/cmake/bb-clang-mingw.cmake 
 cmake --build build
 ```
 
-Builds are optimized (Release) unless you pass `-DCMAKE_BUILD_TYPE=Debug`. The SDK looks for
+Builds are optimized (Release) unless you pass `-DCMAKE_BUILD_TYPE=Debug`, and C is C11 with
+GNU extensions (`-std=gnu11`, so `<math.h>` has `M_PI`); `-DCMAKE_C_EXTENSIONS=OFF` makes it
+strict C11. The SDK looks for
 MSYS2's clang first and says which it took; `-DBB_CLANG=<path>` picks another (it must target
 MinGW: the official LLVM installer's clang targets MSVC and won't link these).
 

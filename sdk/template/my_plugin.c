@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * my_plugin: a starting point. Press F6 in the world to see your HP and where you stand. Another
- * key: plugins.ini, [my_plugin] key = 64 (an SDL scancode: F1 is 58, so 64 is F7).
+ * my_plugin: a starting point. Press F6 in the world to see your HP, where you stand and which
+ * way you face. Another key: plugins.ini, [my_plugin] key = 64 (an SDL scancode: F1 is 58, so 64
+ * is F7).
  *
  * Every plugin has the same pieces:
  *   - bb_plugin_info: its name and API version, read before anything runs;
@@ -10,6 +11,7 @@
  * Rename it in bb_plugin_info and in CMakeLists.txt. The API is include/bbhost_plugin.h. */
 #include "bbhost_plugin.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -31,16 +33,16 @@ static void on_frame(void *user) {
     if (g_api->player_stat_get("hp", &hp) != 0 || g_api->player_stat_get("max_hp", &max_hp) != 0 ||
         g_api->player_position(xyz, &yaw) != 0)
         return; /* no character loaded */
-    char text[128];
-    snprintf(text, sizeof text, "HP %lld / %lld at (%.1f, %.1f, %.1f)", (long long)hp, (long long)max_hp,
-             xyz[0], xyz[1], xyz[2]);
+    char text[160];
+    snprintf(text, sizeof text, "HP %lld / %lld at (%.1f, %.1f, %.1f) facing %.0f degrees", (long long)hp,
+             (long long)max_hp, xyz[0], xyz[1], xyz[2], yaw * 180.0 / M_PI); /* yaw is in radians */
     g_api->show_message(text, 3.0f);
     g_api->log("%s", text);
 }
 
 BB_PLUGIN_EXPORT const BbPluginInfo bb_plugin_info = {
     BB_PLUGIN_API_VERSION, 0, "my_plugin", "My plugin", "0.1.0", "you",
-    "Shows your HP and position when you press a key.",
+    "Shows your HP, position and facing when you press a key.",
 };
 
 BB_PLUGIN_EXPORT int bb_plugin_init(const BbHostApi *api) {

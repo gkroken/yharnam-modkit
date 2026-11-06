@@ -16,6 +16,7 @@ set_target_properties(bb_lua_core PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF POSI
 target_compile_options(bb_lua_core PRIVATE -w)
 
 bb_add_plugin(bb_lua bb_lua.c)
+set_target_properties(bb_lua PROPERTIES C_EXTENSIONS OFF)  # strict -std=c11, as tools/build-plugins.sh
 target_include_directories(bb_lua PRIVATE "${_lua}")
 target_compile_options(bb_lua PRIVATE -Werror)
 target_link_libraries(bb_lua PRIVATE bb_lua_core)
