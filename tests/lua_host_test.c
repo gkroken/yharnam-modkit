@@ -327,14 +327,66 @@ static void write_script(const char *name, const char *text) {
     fclose(f);
 }
 
+/* Deletes a folder and everything in it. 1 when it's gone. */
+static int remove_tree(const char *dir) {
+    char pattern[MAX_PATH], path[MAX_PATH];
+    snprintf(pattern, sizeof pattern, "%s\\*", dir);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, "..")) continue;
+            snprintf(path, sizeof path, "%s\\%s", dir, fd.cFileName);
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) remove_tree(path);
+            else DeleteFileA(path);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    return RemoveDirectoryA(dir) || GetFileAttributesA(dir) == INVALID_FILE_ATTRIBUTES;
+}
+
+/* The test's folder is bb-lua-test-<pid> in the temp folder, and its DLL copies stay loaded (so
+ * locked) until the process ends, so a run can't remove its own. A later process given the same
+ * pid found the old one's files there (a watcher.lua the reload test then loaded at the start,
+ * failing it now and then): so a run starts from an empty folder of its own, and removes
+ * folders more than a day old (fresher ones may be a run still going on). */
+static int fresh_test_dir(void) {
+    char temp[MAX_PATH], pattern[MAX_PATH], path[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp);
+    snprintf(pattern, sizeof pattern, "%sbb-lua-test-*", temp);
+    FILETIME now_ft;
+    GetSystemTimeAsFileTime(&now_ft);
+    const ULONGLONG now = ((ULONGLONG)now_ft.dwHighDateTime << 32) | now_ft.dwLowDateTime;
+    const ULONGLONG day = 24ull * 3600 * 10000000;  /* FILETIME counts 100 ns */
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            const ULONGLONG at = ((ULONGLONG)fd.ftLastWriteTime.dwHighDateTime << 32) | fd.ftLastWriteTime.dwLowDateTime;
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && now > at && now - at > day) {
+                snprintf(path, sizeof path, "%s%s", temp, fd.cFileName);
+                remove_tree(path);
+            }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    /* LUA_HOST_TEST_DIR names the folder instead: the test of this cleanup plants leftovers there. */
+    const char *named = getenv("LUA_HOST_TEST_DIR");
+    if (named && *named) snprintf(g_dir, MAX_PATH, "%s", named);
+    else snprintf(g_dir, MAX_PATH, "%sbb-lua-test-%lu", temp, GetCurrentProcessId());
+    if (!remove_tree(g_dir)) {
+        fprintf(stderr, "lua-host-test: can't empty the leftover folder %s\n", g_dir);
+        return 0;
+    }
+    return CreateDirectoryA(g_dir, NULL);
+}
+
 int main(int argc, char **argv) {
     if (argc != 3) {
         fprintf(stderr, "usage: lua-host-test <bb_lua.dll> <plugins/lua/examples>\n");
         return 2;
     }
-    GetTempPathA(MAX_PATH, g_dir);
-    snprintf(g_dir + strlen(g_dir), MAX_PATH - strlen(g_dir), "bb-lua-test-%lu", GetCurrentProcessId());
-    CreateDirectoryA(g_dir, NULL);
+    if (!fresh_test_dir()) return 1;
     char lua_dir[MAX_PATH];
     snprintf(lua_dir, sizeof lua_dir, "%s\\lua", g_dir);
     CreateDirectoryA(lua_dir, NULL);
