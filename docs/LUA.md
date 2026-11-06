@@ -109,7 +109,8 @@ lines can rebind the game's keys.
 
 For writing scripts: `[lua] reload_key = f8` in `plugins.ini` makes that key close every script
 and load them all again from disk, mods' scripts included, without restarting the game. It's off
-unless set. Two things only the game's start can do stay as they were then:
+unless set, and unlike a hotkey it works in menus and text boxes too: it's a key for whoever
+writes the scripts, so pick one you won't type. Two things only the game's start can do stay as they were then:
 - `bb.replace_text` returns 0 and logs that the start's text stays; new text needs a restart.
 - `bb.flag.on` works only if a script watched flags at the start; otherwise that script stops
   with an error saying so.
