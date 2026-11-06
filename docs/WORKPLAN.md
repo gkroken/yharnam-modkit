@@ -262,8 +262,11 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
       (examples, template, and bb_lua again, which must equal the shipped DLL byte for byte),
       runs lua-host-test on the shipped `bb_lua.dll`, and holds every DLL to Windows' own imports.
       In the world, the template built from the package showed HP and position on F6.
-- [ ] The launcher's Mods page lists plugins and scripts with toggles and load errors, read from
-      `bb_plugin_info`.
+- [x] The launcher's Mods page lists plugins and scripts with toggles and load errors, read from
+      `bb_plugin_info`: Mods & Patches > Plugins and scripts (port `launcher/bbport_plugins.py`,
+      which reads each DLL's exports from the file without loading it, follows the host's load
+      rules, edits plugins.ini in place and reads the last run's log). Seen in the real launcher
+      on a scratch data folder (PySide6 6.12); not yet in the packaged launcher exe.
 - [ ] Modder guide: `docs/plugins.md` and `docs/lua.md`, and the address conventions (Binary Ninja
       addresses, 1.09 only).
 - [ ] CI: build the fork and the examples, and run the host-side tests.
