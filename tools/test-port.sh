@@ -108,7 +108,7 @@ run_examples() {
 run_tool_tests() {
     local exe="$root/out/tests/lua-host-test.exe"
     if [[ ! -x $exe ]]; then problem "no $exe (did build-plugins.sh run?)"; return; fi
-    if timeout 120 "$exe" "$root/out/plugins/bb_lua.dll" > "$logs/lua-host-test.log" 2>&1; then
+    if timeout 120 "$exe" "$root/out/plugins/bb_lua.dll" "$root/plugins/lua/examples" > "$logs/lua-host-test.log" 2>&1; then
         echo "Tool tests: $(tail -1 "$logs/lua-host-test.log")"
     else
         problem "lua-host-test failed: $(grep -m1 'check failed' "$logs/lua-host-test.log")"

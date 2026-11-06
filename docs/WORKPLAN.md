@@ -223,8 +223,9 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
 - [x] Error isolation: each script has its own Lua state and runs under `pcall`. A script that
       errors, loops or runs out of memory is stopped alone, with a log line and a banner.
 - [ ] Hot reload with a key (scripts only; hooks stay sealed). Next.
-- [ ] Examples: a flag-triggered buff and a weapon param tweak are in
-      (`plugins/lua/examples/`); a lamp notification next.
+- [x] Examples (`plugins/lua/examples/`): a flag-triggered buff, a weapon param tweak, and a
+      lamp notification. lua-host-test runs lamp_notify.lua from the folder; in the world, a
+      lamp flag set through the game showed "Lamp lit: Central Yharnam (1 of 4)".
 
 **Done when** a mod folder holding only `scripts/*.lua` changes gameplay with no DLL and no
 rebuild.

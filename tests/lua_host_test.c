@@ -324,8 +324,8 @@ static void write_script(const char *name, const char *text) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "usage: lua-host-test <bb_lua.dll>\n");
+    if (argc != 3) {
+        fprintf(stderr, "usage: lua-host-test <bb_lua.dll> <plugins/lua/examples>\n");
         return 2;
     }
     GetTempPathA(MAX_PATH, g_dir);
@@ -821,6 +821,35 @@ int main(int argc, char **argv) {
         CHECK(strstr(g_log, "warper3: to false false false") && strstr(g_log, "online play") && g_warp_calls == 2 &&
               g_lamp_calls == 1);
         SetEnvironmentVariableA("BB_ONLINE", NULL);
+
+        /* The lamp_notify example (plugins/lua/examples, argv[2]): a lamp's lit flag (its base + 10)
+         * turning on gives a banner naming the area and the count; other flags and turning off
+         * give none. */
+        {
+            CHECK(argc > 2);  /* the examples folder: tools/test-port.sh passes it */
+            char path[MAX_PATH];
+            snprintf(path, sizeof path, "%s\\lamp_notify.lua", argv[2]);
+            FILE *f = fopen(path, "rb");
+            CHECK(f);
+            static char source[16384];
+            const size_t got = fread(source, 1, sizeof source - 1, f);
+            fclose(f);
+            source[got] = 0;
+            CHECK(got > 0 && got < sizeof source - 1);
+            g_flag_cb = NULL;
+            CHECK(load_alone(argv[1], "lamp_notify", source));
+            CHECK(strstr(g_log, "lamp_notify: watching 44 lamps") && g_flag_cb);
+            const int banners = g_banners;
+            g_log[0] = 0;
+            g_flag_cb(12417820 + 10, 1, NULL);  /* Central Yharnam's second lamp lit */
+            CHECK(g_banners == banners + 1 && strstr(g_banner, "Lamp lit: Central Yharnam (1 of 4)"));
+            g_flag_cb(12417820 + 10, 0, NULL);  /* off: nothing */
+            g_flag_cb(12417820, 1, NULL);       /* the base itself, not the lit flag */
+            g_flag_cb(5, 1, NULL);              /* any other flag */
+            CHECK(g_banners == banners + 1);
+            g_flag_cb(13607800 + 10, 1, NULL);  /* Fishing Hamlet */
+            CHECK(g_banners == banners + 2 && strstr(g_banner, "Fishing Hamlet (1 of 3)"));
+        }
 
         /* Other names: kp0 (98), f12 (69), lshift (225). */
         g_input_now.key[98] = g_input_now.key[69] = g_input_now.key[225] = 1;

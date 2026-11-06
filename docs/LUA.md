@@ -28,8 +28,11 @@ A mod can ship scripts beside its files: `mods\<mod>\scripts\*.lua`.
 - **Script-only mods:** a mod made only of scripts is fine. The port's mod merging lists it as
   having no game files and carries on.
 
-`plugins/lua/examples/` has two scripts to start from: `flag_buff.lua` (a SpEffect each time a
-chosen flag turns on) and `weapon_tweak.lua` (one param field changed by name).
+`plugins/lua/examples/` has three scripts to start from:
+- `flag_buff.lua`: a SpEffect each time a chosen flag turns on.
+- `weapon_tweak.lua`: one param field changed by name.
+- `lamp_notify.lua`: a banner naming the area when you light a lamp, read-only, so it runs online
+  too.
 
 ## The `bb` table
 
