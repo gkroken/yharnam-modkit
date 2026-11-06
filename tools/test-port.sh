@@ -131,6 +131,7 @@ run_tool_tests() {
     echo 'bb.flag.on(function() end)' > "$dir/reloads/lua/watcher.lua"
     echo keep > "$keep/keep.txt"
     [[ -e $dir/link ]] || MSYS_NO_PATHCONV=1 cmd /c mklink /J "$(cygpath -w "$dir/link")" "$(cygpath -w "$keep")" > /dev/null
+    [[ -f $dir/link/keep.txt ]] || problem "couldn't plant the junction out/lua-host-test/link -> out/lua-host-keep: the cleanup's junction check tests nothing"
     if LUA_HOST_TEST_DIR="$(cygpath -w "$dir")" timeout 120 "$exe" "$root/out/plugins/bb_lua.dll" "$root/plugins/lua/examples" \
             > "$logs/lua-host-test.log" 2>&1; then
         say "Tool tests: $(tail -1 "$logs/lua-host-test.log")"
