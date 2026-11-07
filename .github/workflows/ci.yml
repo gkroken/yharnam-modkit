@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # yharnam-modkit on Windows: build the example plugins, the Lua host (bb_lua.dll) and its test
-# host, run lua-host-test on the examples and quiet-test on tools/quiet.sh, and make the SDK
+# host, run lua-host-test (which loads and runs every Lua example) and quiet-test on
+# tools/quiet.sh, and make the SDK
 # package and prove it builds on its own
 # (tools/make-sdk.sh --check: examples, template, bb_lua again byte for byte, the edit examples
 # parsed by the port's script_edits.py). The port's own CI is in port/.github/workflows.
@@ -64,13 +65,25 @@ jobs:
         shell: bash
         run: |
           annotate() { local t; t=$(tail -40 "$2" | sed -e 's/%/%25/g' -e 's/\r//g'); echo "::error title=$1::${t//$'\n'/%0A}"; }
-          mkdir -p out/lua-host-test out/ci
-          if LUA_HOST_TEST_DIR="$(cygpath -w out/lua-host-test)" PATH="/c/msys64/clang64/bin:$PATH" \
+          # As tools/test-port.sh: a leftover script and a junction to a folder outside, which
+          # the test's cleanup must remove without emptying the junction's target (tool-a9ab611-N1).
+          dir=out/lua-host-test keep=out/lua-host-keep
+          mkdir -p "$dir/reloads/lua" "$keep" out/ci
+          echo 'bb.flag.on(function() end)' > "$dir/reloads/lua/watcher.lua"
+          echo keep > "$keep/keep.txt"
+          MSYS_NO_PATHCONV=1 cmd /c mklink /J "$(cygpath -w "$dir/link")" "$(cygpath -w "$keep")" > /dev/null
+          if [[ ! -f $dir/link/keep.txt ]]; then
+            echo "::error title=lua-host-test::couldn't plant the junction $dir/link"; exit 1
+          fi
+          if LUA_HOST_TEST_DIR="$(cygpath -w "$dir")" PATH="/c/msys64/clang64/bin:$PATH" \
                 timeout 120 out/tests/lua-host-test.exe out/plugins/bb_lua.dll plugins/lua/examples \
                 > out/ci/lua-host-test.log 2>&1; then
             tail -1 out/ci/lua-host-test.log
           else
             cat out/ci/lua-host-test.log; annotate 'lua-host-test failed' out/ci/lua-host-test.log; exit 1
+          fi
+          if [[ ! -f $keep/keep.txt ]]; then
+            echo "::error title=lua-host-test::the cleanup emptied a folder a junction pointed to"; exit 1
           fi
 
       - name: quiet-test

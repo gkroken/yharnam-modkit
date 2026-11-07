@@ -57,6 +57,7 @@ static const char *host_config(const char *key) {
     if (!strcmp(key, "warps.lua")) return "1";           /* the host's grant, as the player writes it */
     if (!strcmp(key, "lua.reload_key")) return g_reload_key_name;
     if (!strcmp(key, LONG_ON "/main.colour")) return "green";
+    if (!strcmp(key, "example_flag_buff.flag")) return "7";   /* the flag_buff example's flag */
     return "";
 }
 static char g_mods[MAX_PATH];
@@ -947,6 +948,58 @@ int main(int argc, char **argv) {
             CHECK(g_banners == banners + 1);
             g_flag_cb(13607800 + 10, 1, NULL);  /* Fishing Hamlet */
             CHECK(g_banners == banners + 2 && strstr(g_banner, "Fishing Hamlet (1 of 3)"));
+        }
+
+        /* Every example script (argv[2]\*.lua, as the SDK ships them) loads and runs three frames
+         * without being stopped, so a broken example fails here and not in a modder's game
+         * (tool-a9ab611-F1). Each runs as "example_<name>", in its own copy of the DLL. flag_buff
+         * and weapon_tweak each do their job against the fake host too. */
+        {
+            char pattern[MAX_PATH];
+            snprintf(pattern, sizeof pattern, "%s\\*.lua", argv[2]);
+            WIN32_FIND_DATAA found;
+            HANDLE h = FindFirstFileA(pattern, &found);
+            CHECK(h != INVALID_HANDLE_VALUE);
+            int examples = 0, buffed = 0, tweaked = 0;
+            do {
+                const size_t len = strlen(found.cFileName);
+                if (len < 5 || _stricmp(found.cFileName + len - 4, ".lua")) continue;  /* *.lua matches x.lua_off's 8.3 name */
+                char tag[96], path[MAX_PATH], want[160];
+                snprintf(tag, sizeof tag, "example_%.*s", (int)(len - 4), found.cFileName);
+                snprintf(path, sizeof path, "%s\\%s", argv[2], found.cFileName);
+                FILE *f = fopen(path, "rb");
+                CHECK(f);
+                static char source[65536];
+                const size_t got = fread(source, 1, sizeof source - 1, f);
+                fclose(f);
+                source[got] = 0;
+                CHECK(got > 0 && got < sizeof source - 1);
+                g_frame = NULL;
+                g_flag_cb = NULL;
+                const int effects = g_effect_count;
+                snprintf(g_weapon_attack, sizeof g_weapon_attack, "92");  /* earlier checks changed it */
+                CHECK(load_alone(argv[1], tag, source));
+                for (int i = 0; i < 3 && g_frame; ++i) g_frame(g_frame_user);
+                printf("  example %s\n", found.cFileName);
+                snprintf(want, sizeof want, "%s: loaded", tag);
+                CHECK(strstr(g_log, want));
+                snprintf(want, sizeof want, "%s: stopped", tag);
+                CHECK(!strstr(g_log, want));
+                if (!strcmp(tag, "example_flag_buff")) {   /* flag 7 (host_config) on: SpEffect 2200 */
+                    CHECK(strstr(g_log, "example_flag_buff: watching flag 7 for SpEffect 2200") && g_flag_cb);
+                    g_flag_cb(7, 1, NULL);
+                    CHECK(g_effect_count == effects + 1 && g_effects[effects] == 2200);
+                    buffed = 1;
+                }
+                if (!strcmp(tag, "example_weapon_tweak")) {  /* its defaults: the fake host's one field */
+                    CHECK(!strcmp(g_weapon_attack, "150") && strstr(g_log, "attackBasePhysics 92 -> 150"));
+                    snprintf(g_weapon_attack, sizeof g_weapon_attack, "92");
+                    tweaked = 1;
+                }
+                ++examples;
+            } while (FindNextFileA(h, &found));
+            FindClose(h);
+            CHECK(examples >= 3 && buffed && tweaked);
         }
 
         /* Hot reload ([lua] reload_key = f8): the press closes every script and loads them again

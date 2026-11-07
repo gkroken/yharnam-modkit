@@ -300,8 +300,9 @@ with one mod, only its flag. Talk edits and the converters are still to do.
       (2026-11-06: every step passed on the first run). This repository's part (it is public
       now, as github.com/gkroken/yharnam-modkit): `.github/workflows/ci.yml` (windows-latest,
       MSYS2 CLANG64) builds the examples, bb_lua and lua-host-test (`tools/build-plugins.sh`),
-      runs lua-host-test on the Lua examples and `tests/quiet_test.sh`, and runs
-      `tools/make-sdk.sh --check`. Its steps passed locally in a fresh clone of modkit at 00bd7f6
+      runs lua-host-test (which loads every `plugins/lua/examples/*.lua` and runs it three
+      frames against its fake host) and `tests/quiet_test.sh`, and runs
+      `tools/make-sdk.sh --check`. Its steps passed locally in a fresh clone of modkit
       (with the port submodule from the fork); not yet run on GitHub.
 
 ## Phase 7: Upstream
