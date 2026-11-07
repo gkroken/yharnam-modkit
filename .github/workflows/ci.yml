@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# yharnam-modkit on Windows: build the example plugins, the Lua host (bb_lua.dll) and its test
+# host, run lua-host-test on the examples and quiet-test on tools/quiet.sh, and make the SDK
+# package and prove it builds on its own
+# (tools/make-sdk.sh --check: examples, template, bb_lua again byte for byte, the edit examples
+# parsed by the port's script_edits.py). The port's own CI is in port/.github/workflows.
+#
+# The actions are pinned by commit; the comment names the release. A failing step's log tail
+# goes out as an error annotation, which the public check-runs API serves without a token.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out as LF
+        shell: pwsh
+        run: git config --global core.autocrlf false
+
+      # The port submodule only (its headers, docs and scripts); not the port's own submodules.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: true
+
+      # release: false: the runner's own C:\msys64, where tools/build-plugins.sh looks.
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2.33.0
+        with:
+          msystem: CLANG64
+          release: false
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-toolchain mingw-w64-clang-x86_64-cmake mingw-w64-clang-x86_64-ninja
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.13'
+
+      - name: Build bb_lua and lua-host-test
+        shell: bash
+        run: |
+          annotate() { local t; t=$(tail -40 "$2" | sed -e 's/%/%25/g' -e 's/\r//g'); echo "::error title=$1::${t//$'\n'/%0A}"; }
+          mkdir -p out/ci
+          if ! bash tools/build-plugins.sh > out/ci/build.log 2>&1; then
+            cat out/ci/build.log; annotate 'build-plugins.sh failed' out/ci/build.log; exit 1
+          fi
+          tail -3 out/ci/build.log
+
+      - name: lua-host-test
+        shell: bash
+        run: |
+          annotate() { local t; t=$(tail -40 "$2" | sed -e 's/%/%25/g' -e 's/\r//g'); echo "::error title=$1::${t//$'\n'/%0A}"; }
+          mkdir -p out/lua-host-test out/ci
+          if LUA_HOST_TEST_DIR="$(cygpath -w out/lua-host-test)" PATH="/c/msys64/clang64/bin:$PATH" \
+                timeout 120 out/tests/lua-host-test.exe out/plugins/bb_lua.dll plugins/lua/examples \
+                > out/ci/lua-host-test.log 2>&1; then
+            tail -1 out/ci/lua-host-test.log
+          else
+            cat out/ci/lua-host-test.log; annotate 'lua-host-test failed' out/ci/lua-host-test.log; exit 1
+          fi
+
+      - name: quiet-test
+        shell: bash
+        run: |
+          annotate() { local t; t=$(tail -40 "$2" | sed -e 's/%/%25/g' -e 's/\r//g'); echo "::error title=$1::${t//$'\n'/%0A}"; }
+          mkdir -p out/ci
+          if bash tests/quiet_test.sh > out/ci/quiet-test.log 2>&1; then
+            tail -1 out/ci/quiet-test.log
+          else
+            cat out/ci/quiet-test.log; annotate 'quiet-test failed' out/ci/quiet-test.log; exit 1
+          fi
+
+      - name: SDK package check
+        shell: bash
+        run: |
+          annotate() { local t; t=$(tail -40 "$2" | sed -e 's/%/%25/g' -e 's/\r//g'); echo "::error title=$1::${t//$'\n'/%0A}"; }
+          mkdir -p out/ci
+          if BB_PYTHON="$(command -v python)" bash tools/make-sdk.sh --check > out/ci/sdk.log 2>&1; then
+            tail -1 out/ci/sdk.log
+          else
+            cat out/ci/sdk.log; annotate 'make-sdk.sh --check failed' out/ci/sdk.log; exit 1
+          fi
