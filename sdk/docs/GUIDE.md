@@ -128,7 +128,9 @@ and the player's own copy of the game is never changed.
   names (`ON`/`OFF`/`CHANGE`, `MAIN`, `AND_01`, `OR_01`, `PASS`/`FAIL`, `End`/`Restart`,
   `EventFlag`). **Any other instruction raw:** its bank and id and typed arguments (`u8`, `s8`,
   `u16`, `s16`, `u32`, `s32`, `f32`), in order, from the community's Bloodborne instruction list
-  (DarkScript3's, at soulsmods.github.io/emedf/bb-emedf.html).
+  (DarkScript3's, at soulsmods.github.io/emedf/bb-emedf.html). Or, instead of `args`, its
+  argument bytes as hex, as the converter below writes them:
+  `{ bank = 2003, id = 2, hex = "ec3cbd0001000000" }` (a whole number of 4-byte words).
 - **Several mods can edit one file:** their events go in, in mod order, on top of any mod that
   replaces that file. A mod whose edit doesn't work is left out whole, with a `Script edits:` line
   saying why, and the game starts without it.
@@ -154,6 +156,26 @@ map start one, `InitializeEvent(0, <id>, 0)` in event 0). Only the events you na
 every instruction comes out raw, with your line beside it as a comment, so the edit file needs
 neither DarkScript3 nor its table to work. Events with parameters and MattScript (`if`/`else`,
 `goto`) aren't converted: write those events as plain instruction lists.
+
+### Made in Soulstruct (or any tool that saves the event file)
+
+If your tool writes the whole compiled event file (Soulstruct's `.emevd.dcx`, a file DarkScript3
+saved, any editor's), convert that file. It needs no instruction table: the converter compares it
+with the game's file of the same name and takes the events the game's file lacks.
+
+```
+python <install>\scripts\script_convert.py m24_01_00_00.emevd.dcx --game <game> `
+    --out mods\<mod>\edits\event\m24_01_00_00.emevd.edit.toml
+```
+- `<game>` is the folder that holds `dvdroot_ps4`. The file you pass may be compressed
+  (`.emevd.dcx`) or not (`.emevd`); its name says which map's file it is compared with.
+- Every event of yours comes out, its instructions raw with their arguments as bytes
+  (`hex = "..."`), and `run = true` when your event 0 starts it (`InitializeEvent(0, <id>, 0)`).
+  `--events 12415990,12415991` takes only those.
+- **Only new events.** Changes you made to the game's own events aren't carried over: an edit adds
+  events, it never changes one. Move such a change into an event of your own.
+- Not converted, with why: an event with parameters, and an instruction that uses layers.
+- The edit file holds only your events, never the rest of the game's file, so it can be shared.
 
 ### Talk options
 

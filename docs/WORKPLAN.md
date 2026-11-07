@@ -264,7 +264,11 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
 - [ ] Converters from DarkScript3 and Soulstruct output to edit files, so authors keep their
       tools. **DarkScript3 done:** `scripts/script_convert.py` (plain instruction lists, every
       argument written, with the modder's own EMEDF; checked against DarkScript3's real table,
-      not yet on text DarkScript3 saved itself). Soulstruct: not started.
+      not yet on text DarkScript3 saved itself). **Compiled event files (Soulstruct's) done:**
+      port dcb27fd, `script_convert.py <map>.emevd.dcx --game <game>` takes the events the game's
+      file lacks, arguments as hex; the guide's section 6 shows it. Checked on a Central Yharnam
+      file made from the game's own with an event added (the edit, applied to the game's file,
+      gives the same event and event 0), not yet on a file Soulstruct itself compiled.
 
 **Done when** two mods each add an event to the same `m*.emevd.dcx`, and both work in game.
 Shown in game (2026-11-06, `game-world.ps1 -Mods`): two mods each added an event to
