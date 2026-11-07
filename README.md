@@ -1,4 +1,6 @@
-# Bloodborne PC: plugins and scripting
+# yharnam-modkit: plugins and scripting for Bloodborne PC
+
+[![ci](https://github.com/gkroken/yharnam-modkit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gkroken/yharnam-modkit/actions/workflows/ci.yml)
 
 Adds a native plugin API and Lua scripting to the
 [yharnam-pc](https://github.com/Jgamrot/yharnam-pc) Bloodborne port, so mods can run code

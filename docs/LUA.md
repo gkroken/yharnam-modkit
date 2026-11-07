@@ -27,7 +27,7 @@ A mod can ship scripts beside its files: `mods\<mod>\scripts\*.lua`.
   can't be read whole (cut off, or not the launcher's shape), no mod's scripts load, and the log
   says so. Your own scripts in `<user>\plugins\lua\` still load. Names of any length work.
 - **Script-only mods:** a mod made only of `scripts/*.lua` is a mod like any other: the
-  launcher's Installed mods page lists it, turns it off and orders it (port fdab644).
+  launcher's Installed mods page lists it, turns it off and orders it (port 3f2412b).
 
 `plugins/lua/examples/` has three scripts to start from:
 - `flag_buff.lua`: a SpEffect each time a chosen flag turns on.

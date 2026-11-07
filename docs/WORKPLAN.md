@@ -31,7 +31,7 @@ plugin can target both runtimes. Background and sources: [RESEARCH.md](RESEARCH.
 - [x] Note the startup order in `src/probe.c`: segments mapped, patches applied,
       `bb_hooks_init`, `bb_engine_install`, `bb_hooks_seal`, game start.
 
-**Test baseline (port b4ae1ae, Windows, 2026-11-04)**: `bash tools/test-port.sh`. It builds and runs
+**Test baseline (port 6cc5fd7, Windows, 2026-11-04)**: `bash tools/test-port.sh`. It builds and runs
 every CMake `*-test` target, then the Python suite, and compares both with
 `tools/test-baseline.txt`. That file lists the floors, the reason for each skip, and every known
 failure by full test id. The run fails on a new failure, and also when fewer tests run or pass, or
@@ -50,7 +50,7 @@ more are skipped. A broken build or a missing Python therefore can't look like a
 
 **Done (2026-11-04):** our own build reaches the title screen and plays well (RTX 4090, 91 engine hooks installed).
 
-## Phase 1: Plugin loader (in the fork): done (port 54808d0, cd2a2bf; tool: the hello example)
+## Phase 1: Plugin loader (in the fork): done (port 4510f34, 814697f; tool: the hello example)
 
 Plugins load in `bb_engine_install()` (`src/engine_features.c`), after the built-in features
 and before `bb_main_frame_install()`. That is the only window before `bb_hooks_seal()` locks
@@ -97,7 +97,7 @@ hooking. The guide is `port/docs/PLUGINS.md`.
   are left out with a log line (unit test).
 - **Not tried:** online play in game, and a DLL that fails `LoadLibrary`.
 
-## Phase 2: Core API v1: done (port 1840f95, aedd07c, de208a0)
+## Phase 2: Core API v1: done (port 4d36bdb, c8584aa, 281a4dd)
 
 The plan was thin wrappers over `src/engine_hooks.h`. What landed is bbhost's own API shape,
 with a stub and chains of this port's (`src/plugin_hooks.c`). Addresses are Binary Ninja
@@ -149,38 +149,38 @@ The port already reaches most of these internally (`src/rebirth.c` has `EVENT_FL
 
 - [x] Event flags: `event_flag_get` (direct read of the flag store, any thread), `event_flag_set`
       (main thread), and an `on_event_flag(fn)` watcher (a hook on the game's setter; one round
-      per frame). Port e230c49, a851c5a.
+      per frame). Port 4c9ce37, 5379fef.
 - [x] Params by table and field name: `param_row`, `param_get`, `param_set`, `param_ids`. Field
       names come from the dump's own PARAMDEF files at each start (`scripts/paramdefs.py`), and
-      are used only where the row size matches the live table. Port 2c250a9.
+      are used only where the row size matches the live table. Port d91c6a3.
 - [ ] Player:
-  - [x] `player_stat_get` and `player_stat_set` (e230c49), and `player_position` and
-        `player_block`, shown in the world (a87a447).
-  - [x] `player_warp` and `lamp_warp`: bbhost's routines (port a46c5c9). Only for a plugin
+  - [x] `player_stat_get` and `player_stat_set` (4c9ce37), and `player_position` and
+        `player_block`, shown in the world (6b35bd2).
+  - [x] `player_warp` and `lamp_warp`: bbhost's routines (port 971ab4d). Only for a plugin
         flagged opt-in and gameplay (the player turned it on; online leaves it out). In the
         world: a 3 m move in Central Yharnam, and a lamp travel with its full load.
   - [x] Warps for Lua scripts: `bb.warp.to` and `bb.warp.lamp`. The player grants them in
-        plugins.ini: `[warps] lua = 1` for the Lua host (the host checks, port fe2789c) and the
+        plugins.ini: `[warps] lua = 1` for the Lua host (the host checks, port 11a5cc9) and the
         script's own name (bb_lua checks), so a downloaded mod's script can't move the player
         because another was allowed to. Online play refuses them in both places. A second,
         gameplay-flagged Lua host was the other choice. It was dropped because two hosts would
         share the one input reader and the one key taker. Run in the world: a move, then a
         lamp travel.
-  - [x] `loading_screen()`: bbhost's reading (port 7383ee0); in Lua as `bb.loading()`. A
+  - [x] `loading_screen()`: bbhost's reading (port 198fa91); in Lua as `bb.loading()`. A
         picture while it read 1 shows the loading screen.
-  - [x] `on_world_load` (port b148dcb).
+  - [x] `on_world_load` (port d5b44ba).
 - [x] Characters: `chr_list` (main thread), `sp_effect_apply` (a SpEffectParam row, a character
-      that `chr_list` returns), `sp_effect_has`. Port a87a447, ebb8113.
+      that `chr_list` returns), `sp_effect_has`. Port 6b35bd2, b2442c3.
 - [ ] UI and input:
-  - [x] `show_message` and `show_text`, drawn by the overlay (port b148dcb).
-  - [x] `replace_text`: bbhost's way (port 128d4b0, 73cba1c): the image's leas and pointers to
+  - [x] `show_message` and `show_text`, drawn by the overlay (port d5b44ba).
+  - [x] `replace_text`: bbhost's way (port 53707ed, 3ad0b21): the image's leas and pointers to
         a UTF-16 string name a copy of the new text. In the world the map texture path's _9999
         became _9998 in the files the game opened.
   - [x] `input`: keys, mouse buttons, clicks, motion and wheel, counted apart from the game's
-        reads; `playing` needs a player in the world. Port c850d52, 37dbc53. In Lua as
+        reads; `playing` needs a player in the world. Port ef28c59, 22b9bdb. In Lua as
         `bb.input` with hotkeys (`bb.input.on_key`), pressed by `game-world.ps1 -Keys` in the world.
   - [x] `input_take`: keys, mouse buttons, wheel and motion taken from the game while playing
-        (`src/input_take.c`, port ad77c97). In Lua as `bb.input.take`, every script's together.
+        (`src/input_take.c`, port 5c5a71f). In Lua as `bb.input.take`, every script's together.
         In the world, taking G kept the gestures menu shut while the hotkey still fired.
   - [ ] Plugin options listed in the guide's Mods tab.
 - [x] Each call has a host-side test against fake structures at the real addresses
@@ -194,8 +194,8 @@ and a second one changes a weapon param row by field name. **Both exist and ran 
   2200 (`sp_effect_apply` = 0), and the player then had it (`sp_effect_has` = 1).
 - `weapon_tweak`: EquipParamWeapon row 2000000's `attackBasePhysics` went 92 -> 150 at start,
   and a probe read 150 back in the world.
-- Since then: `show_message`/`show_text` (port b148dcb), input and `input_take` (c850d52 to
-  ad77c97), and `loading_screen` (7383ee0), the warps (a46c5c9) and `replace_text` (128d4b0). Phase 3's API
+- Since then: `show_message`/`show_text` (port d5b44ba), input and `input_take` (ef28c59 to
+  5c5a71f), and `loading_screen` (198fa91), the warps (971ab4d) and `replace_text` (53707ed). Phase 3's API
   is all in, Lua warps included.
 
 ## Phase 4: Lua scripting (`bb_lua.dll`)
@@ -265,7 +265,7 @@ The port edits event scripts (EMEVD) and talk scripts (ESD) at prepare time (`sc
       tools. **DarkScript3 done:** `scripts/script_convert.py` (plain instruction lists, every
       argument written, with the modder's own EMEDF; checked against DarkScript3's real table,
       not yet on text DarkScript3 saved itself). **Compiled event files (Soulstruct's) done:**
-      port dcb27fd, `script_convert.py <map>.emevd.dcx --game <game>` takes the events the game's
+      port e4ce291, `script_convert.py <map>.emevd.dcx --game <game>` takes the events the game's
       file lacks, arguments as hex; the guide's section 6 shows it. Checked on a Central Yharnam
       file made from the game's own with an event added (the edit, applied to the game's file,
       gives the same event and event 0), not yet on a file Soulstruct itself compiled.
@@ -295,19 +295,19 @@ with one mod, only its flag. Talk edits and the converters are still to do.
       addresses, sharing, troubleshooting), beside `LUA.md` and `PLUGINS.md`; `AGENTS.md` (and a
       `CLAUDE.md` importing it) for coding agents; `tools/game-world.ps1` to test in the world.
       Released yharnam-pc packages have no plugin host yet: a mod needs a build of this fork.
-- [ ] CI: build the fork and the examples, and run the host-side tests. The fork's part is
-      written: port `.github/workflows/plugins.yml` (windows-latest, MSYS2 CLANG64) runs
+- [x] CI: build the fork and the examples, and run the host-side tests. The fork's part:
+      port `.github/workflows/plugins.yml` (windows-latest, MSYS2 CLANG64) runs
       `bash build.sh`, every CMake `*-test` target (`.github/ci/c-tests.sh`, which names the
       seven upstream ones that can't run on Windows and fails on a stale entry), and the
       Python `test_launcher_plugins`, `test_paramdefs` and `test_probe` (`.github/ci/py-tests.py`,
-      where any skip it doesn't expect fails the run). Green on GitHub at port fecd98d
+      where any skip it doesn't expect fails the run). Green on GitHub at port ec167cc
       (2026-11-06: every step passed on the first run). This repository's part (it is public
       now, as github.com/gkroken/yharnam-modkit): `.github/workflows/ci.yml` (windows-latest,
       MSYS2 CLANG64) builds the examples, bb_lua and lua-host-test (`tools/build-plugins.sh`),
       runs lua-host-test (which loads every `plugins/lua/examples/*.lua` and runs it three
       frames against its fake host) and `tests/quiet_test.sh`, and runs
-      `tools/make-sdk.sh --check`. Its steps passed locally in a fresh clone of modkit
-      (with the port submodule from the fork); not yet run on GitHub.
+      `tools/make-sdk.sh --check`. Green on GitHub: modkit run #1 at 46333e2 (2026-11-07,
+      every step on the first run), and the fork's run #11 at 54a7384, its pointer.
 
 ## Phase 7: Upstream
 
